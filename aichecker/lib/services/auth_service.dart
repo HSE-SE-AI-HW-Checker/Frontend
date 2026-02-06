@@ -1,28 +1,35 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 
 class AuthService {
   static const String baseUrl = 'http://localhost:8080';
+  late final Dio _dio;
+
+  AuthService() {
+    _dio = Dio(BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: const Duration(seconds: 5),
+      receiveTimeout: const Duration(seconds: 3),
+      headers: {'Content-Type': 'application/json'},
+    ));
+  }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
-      final uri = Uri.parse('$baseUrl/login').replace(queryParameters: {
+      final response = await _dio.post('/sign_in', data: {
         'email': email,
         'password': password,
       });
 
-      final response = await http.get(uri);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': !(data['error'] ?? false),
-          'message': data['message'] ?? 'Успешная авторизация',
-          'error': data['error'] ?? false,
-        };
-      } else {
+      final data = response.data;
+      return {
+        'success': !(data['error'] ?? false),
+        'message': data['message'] ?? 'Успешная авторизация',
+        'error': data['error'] ?? false,
+      };
+    } on DioException catch (e) {
+      if (e.response != null) {
         try {
-          final data = jsonDecode(response.body);
+          final data = e.response!.data;
           return {
             'success': false,
             'message': data['message'] ?? 'Ошибка авторизации',
@@ -31,15 +38,14 @@ class AuthService {
         } catch (_) {
           return {
             'success': false,
-            'message': 'Ошибка авторизации: ${response.statusCode}',
+            'message': 'Ошибка авторизации: ${e.response!.statusCode}',
             'error': true,
           };
         }
       }
-    } catch (e) {
       return {
         'success': false,
-        'message': 'Ошибка соединения: $e',
+        'message': 'Ошибка соединения: ${e.message}',
         'error': true,
       };
     }
@@ -48,26 +54,22 @@ class AuthService {
   Future<Map<String, dynamic>> register(
       String username, String email, String password) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'username': username,
-          'email': email,
-          'password': password,
-        }),
-      );
+      final response = await _dio.post('/sign_up', data: {
+        'username': username,
+        'email': email,
+        'password': password,
+      });
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': !(data['error'] ?? false),
-          'message': data['message'] ?? 'Успешная регистрация',
-          'error': data['error'] ?? false,
-        };
-      } else {
+      final data = response.data;
+      return {
+        'success': !(data['error'] ?? false),
+        'message': data['message'] ?? 'Успешная регистрация',
+        'error': data['error'] ?? false,
+      };
+    } on DioException catch (e) {
+      if (e.response != null) {
         try {
-          final data = jsonDecode(response.body);
+          final data = e.response!.data;
           return {
             'success': false,
             'message': data['message'] ?? 'Ошибка регистрации',
@@ -76,15 +78,14 @@ class AuthService {
         } catch (_) {
           return {
             'success': false,
-            'message': 'Ошибка регистрации: ${response.statusCode}',
+            'message': 'Ошибка регистрации: ${e.response!.statusCode}',
             'error': true,
           };
         }
       }
-    } catch (e) {
       return {
         'success': false,
-        'message': 'Ошибка соединения: $e',
+        'message': 'Ошибка соединения: ${e.message}',
         'error': true,
       };
     }
