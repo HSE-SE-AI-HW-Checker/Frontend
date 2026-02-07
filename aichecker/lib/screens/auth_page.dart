@@ -404,16 +404,16 @@ class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
       ),
       if (!_isLogin) ...[
         const SizedBox(height: 20),
-        _buildFieldLabel('Подтвердите пароль'),
+        _buildFieldLabel('Повторите пароль'),
         const SizedBox(height: 8),
         TextFormField(
           controller: _confirmPasswordController,
           style: const TextStyle(color: _textPrimary, fontSize: 15),
-          decoration: _inputDecoration('Подтвердите пароль'),
+          decoration: _inputDecoration('Повторите пароль'),
           obscureText: true,
           enabled: !_isLoading,
           validator: (value) {
-            if (value == null || value.isEmpty) return 'Подтвердите пароль';
+            if (value == null || value.isEmpty) return 'Повторите пароль';
             if (value != _passwordController.text) {
               return 'Пароли не совпадают';
             }
