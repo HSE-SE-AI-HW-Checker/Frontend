@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/auth_service.dart';
+import 'main_page.dart';
 
 const _accentPrimary = Color(0xFF00D4FF);
 const _accentSecondary = Color(0xFF7C3AED);
@@ -122,7 +123,11 @@ class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
       _showMessage(message, isError: isError);
 
       if (!isError) {
-        // TODO: Navigate to home page
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const MainPage()),
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
