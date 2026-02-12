@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'profile_page.dart';
+
 const _accentPrimary = Color(0xFF00D4FF);
 const _accentSecondary = Color(0xFF7C3AED);
 const _textPrimary = Color(0xFFF9FAFB);
@@ -105,13 +107,15 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
 
           // Content
           SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(),
-                _buildPageTitle(),
-                Expanded(child: _buildContent()),
-              ],
-            ),
+            child: _currentNavIndex == 2
+                ? const ProfilePage()
+                : Column(
+                    children: [
+                      _buildHeader(),
+                      _buildPageTitle(),
+                      Expanded(child: _buildContent()),
+                    ],
+                  ),
           ),
 
           // Bottom nav
