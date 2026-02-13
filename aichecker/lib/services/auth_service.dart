@@ -113,7 +113,7 @@ class AuthService {
         'success': data['success'] ?? true,
         'message': data['message'] ?? 'Выход выполнен',
       };
-    } on DioException catch (e) {
+    } on DioException {
       // Даже если запрос упал, удаляем токены локально
       await TokenStorage.clearTokens();
 

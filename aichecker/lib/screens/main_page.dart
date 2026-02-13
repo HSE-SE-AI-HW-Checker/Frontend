@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'profile_page.dart';
+import 'room_page.dart';
 
 const _accentPrimary = Color(0xFF00D4FF);
 const _accentSecondary = Color(0xFF7C3AED);
@@ -387,7 +388,11 @@ class _RoomCardState extends State<_RoomCard> {
         onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
           onTap: () {
-            // TODO: Navigate to room details
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => RoomPage(roomName: room.name),
+              ),
+            );
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),

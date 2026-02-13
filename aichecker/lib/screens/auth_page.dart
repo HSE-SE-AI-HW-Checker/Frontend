@@ -25,6 +25,7 @@ class AuthPage extends StatefulWidget {
 class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
   bool _isLogin = true;
   bool _isLoading = false;
+  String? _submissionError;
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -47,6 +48,18 @@ class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 1000),
       vsync: this,
     )..forward();
+
+    // Очищаем ошибку при изменении полей
+    _usernameController.addListener(_clearSubmissionError);
+    _emailController.addListener(_clearSubmissionError);
+    _passwordController.addListener(_clearSubmissionError);
+    _confirmPasswordController.addListener(_clearSubmissionError);
+  }
+
+  void _clearSubmissionError() {
+    if (_submissionError != null) {
+      setState(() => _submissionError = null);
+    }
   }
 
   @override
@@ -63,6 +76,7 @@ class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
   void _toggleForm() {
     setState(() {
       _isLogin = !_isLogin;
+      _submissionError = null;
       _formKey.currentState?.reset();
       _usernameController.clear();
       _emailController.clear();
@@ -71,36 +85,13 @@ class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
     });
   }
 
-  void _showMessage(String message, {bool isError = false}) {
-    if (message.length > 100) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(isError ? 'Ошибка' : 'Успех'),
-          content: SingleChildScrollView(child: Text(message)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: isError ? Colors.red : Colors.green,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    }
-  }
-
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _submissionError = null;
+    });
 
     final username = _usernameController.text;
     final email = _emailController.text;
@@ -116,13 +107,14 @@ class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
 
       if (!mounted) return;
 
-      final message = result['message'] ??
-          (_isLogin ? 'Успешный вход!' : 'Регистрация успешна!');
       final isError = result['error'] ?? false;
 
-      _showMessage(message, isError: isError);
-
-      if (!isError) {
+      if (isError) {
+        final message = result['message'] ??
+            (_isLogin ? 'Ошибка авторизации' : 'Ошибка регистрации');
+        setState(() => _submissionError = message);
+      } else {
+        // Успех - переходим на главную страницу без сообщения
         if (mounted) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const MainPage()),
@@ -424,6 +416,39 @@ class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
             }
             return null;
           },
+        ),
+      ],
+      if (_submissionError != null) ...[
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Colors.red.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.error_outline,
+                color: Colors.red,
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _submissionError!,
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     ];
