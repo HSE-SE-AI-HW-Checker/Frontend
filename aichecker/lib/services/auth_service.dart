@@ -1,43 +1,10 @@
 import 'package:dio/dio.dart';
+import 'api_client.dart';
 import 'token_storage.dart';
 
 class AuthService {
-  static const String baseUrl = 'http://localhost:8080';
-  late final Dio _dio;
-
-  AuthService() {
-    _dio = Dio(BaseOptions(
-      baseUrl: baseUrl,
-      connectTimeout: const Duration(seconds: 5),
-      receiveTimeout: const Duration(seconds: 3),
-      headers: {'Content-Type': 'application/json'},
-    ));
-
-    // Добавляем interceptor для автоматической отправки токенов
-    _dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) async {
-          // Добавляем токен к каждому запросу (кроме sign_in и sign_up)
-          if (!options.path.contains('/sign_in') &&
-              !options.path.contains('/sign_up')) {
-            final authHeader = await TokenStorage.getAuthorizationHeader();
-            if (authHeader != null) {
-              options.headers['Authorization'] = authHeader;
-            }
-          }
-          return handler.next(options);
-        },
-        onError: (error, handler) async {
-          // Если получили 401, значит токен истек - перенаправляем на логин
-          if (error.response?.statusCode == 401) {
-            await TokenStorage.clearTokens();
-            // Можно здесь добавить навигацию на страницу логина
-          }
-          return handler.next(error);
-        },
-      ),
-    );
-  }
+  final _apiClient = ApiClient();
+  Dio get _dio => _apiClient.dio;
 
   /// Вход в систему
   Future<Map<String, dynamic>> login(String email, String password) async {
@@ -146,28 +113,6 @@ class AuthService {
 
   /// Обработка ошибок
   Map<String, dynamic> _handleError(DioException e, String defaultMessage) {
-    if (e.response != null) {
-      try {
-        final data = e.response!.data;
-        return {
-          'success': false,
-          'message': data['message'] ??
-              data['detail'] ??
-              '$defaultMessage: ${e.response!.statusCode}',
-          'error': true,
-        };
-      } catch (_) {
-        return {
-          'success': false,
-          'message': '$defaultMessage: ${e.response!.statusCode}',
-          'error': true,
-        };
-      }
-    }
-    return {
-      'success': false,
-      'message': 'Ошибка соединения: ${e.message}',
-      'error': true,
-    };
+    return _apiClient.handleError(e, defaultMessage);
   }
 }
