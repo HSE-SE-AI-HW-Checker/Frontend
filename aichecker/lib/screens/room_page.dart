@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../services/room_service.dart';
+
 const _accentPrimary = Color(0xFF00D4FF);
 const _accentSecondary = Color(0xFF7C3AED);
 const _textPrimary = Color(0xFFF9FAFB);
@@ -32,6 +34,10 @@ class _RoomPageState extends State<RoomPage>
   late PageController _pageController;
   int _currentTab = 0;
   final _githubController = TextEditingController();
+  final _roomService = RoomService();
+  bool _isSubmitting = false;
+  String? _submissionError;
+  String? _submissionSuccess;
 
   @override
   void initState() {
@@ -42,6 +48,7 @@ class _RoomPageState extends State<RoomPage>
     )..repeat();
 
     _pageController = PageController();
+    _githubController.addListener(_clearSubmissionMessages);
   }
 
   @override
@@ -63,6 +70,65 @@ class _RoomPageState extends State<RoomPage>
 
   void _onPageChanged(int index) {
     setState(() => _currentTab = index);
+  }
+
+  void _clearSubmissionMessages() {
+    if (_submissionError != null || _submissionSuccess != null) {
+      setState(() {
+        _submissionError = null;
+        _submissionSuccess = null;
+      });
+    }
+  }
+
+  Future<void> _submitSolution() async {
+    final url = _githubController.text.trim();
+
+    if (url.isEmpty) {
+      setState(() {
+        _submissionError = 'Введите URL репозитория';
+        _submissionSuccess = null;
+      });
+      return;
+    }
+
+    // Простая валидация URL
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      setState(() {
+        _submissionError = 'URL должен начинаться с http:// или https://';
+        _submissionSuccess = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _submissionError = null;
+      _submissionSuccess = null;
+    });
+
+    try {
+      final result = await _roomService.submitSolution(url);
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        setState(() {
+          _submissionSuccess = result['message'] ?? 'Решение успешно отправлено';
+          _submissionError = null;
+          _githubController.clear();
+        });
+      } else {
+        setState(() {
+          _submissionError = result['message'] ?? 'Ошибка отправки решения';
+          _submissionSuccess = null;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
   @override
@@ -359,7 +425,7 @@ class _RoomPageState extends State<RoomPage>
               ),
               const SizedBox(height: 16),
               const Text(
-                'GitHub репозиторий',
+                'Ссылка на репозиторий',
                 style: TextStyle(
                   fontSize: 13,
                   color: _textSecondary,
@@ -406,6 +472,76 @@ class _RoomPageState extends State<RoomPage>
                 ),
               ),
               const SizedBox(height: 16),
+
+              // Error/Success messages
+              if (_submissionError != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _error.withValues(alpha: 0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: _error,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _submissionError!,
+                          style: const TextStyle(
+                            color: _error,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              if (_submissionSuccess != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _success.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _success.withValues(alpha: 0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle_outline,
+                        color: _success,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _submissionSuccess!,
+                          style: const TextStyle(
+                            color: _success,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
@@ -426,21 +562,28 @@ class _RoomPageState extends State<RoomPage>
                   color: Colors.transparent,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(10),
-                    onTap: () {
-                      // TODO: Submit to API
-                    },
+                    onTap: _isSubmitting ? null : _submitSolution,
                     child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       alignment: Alignment.center,
-                      child: const Text(
-                        'Отправить на проверку',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Text(
+                              'Отправить на проверку',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                     ),
                   ),
                 ),
