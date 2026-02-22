@@ -1,0 +1,32 @@
+{
+  "rooms": [
+    {
+      "id": "5",
+      "name": "React Advanced Patterns",
+      "participants": 28,
+      "is_active": true,
+      "created": "5 янв 2026"
+    },
+    {
+      "id": "6",
+      "name": "Node.js Microservices",
+      "participants": 15,
+      "is_active": true,
+      "created": "18 дек 2025"
+    },
+    {
+      "id": "7",
+      "name": "Database Design",
+      "participants": 42,
+      "is_active": false,
+      "created": "10 дек 2025"
+    },
+    {
+      "id": "8",
+      "name": "Python for Beginners",
+      "participants": 35,
+      "is_active": false,
+      "created": "22 дек 2025"
+    }
+  ]
+}

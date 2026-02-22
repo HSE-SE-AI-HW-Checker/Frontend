@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/room.dart';
+import '../services/room_service.dart';
 import 'profile_page.dart';
 import 'room_page.dart';
 import 'rooms_page.dart';
@@ -24,32 +26,6 @@ Color _scoreColor(int score) {
   return _colorLow;
 }
 
-class _Room {
-  final String name;
-  final int score;
-  final int participants;
-  final String lastActive;
-  final int validations;
-
-  const _Room({
-    required this.name,
-    required this.score,
-    required this.participants,
-    required this.lastActive,
-    required this.validations,
-  });
-}
-
-const _sampleRooms = [
-  _Room(name: 'Production API Gateway', score: 92, participants: 8, lastActive: '5 мин назад', validations: 1247),
-  _Room(name: 'Frontend Validation Rules', score: 78, participants: 5, lastActive: '15 мин назад', validations: 892),
-  _Room(name: 'Auth Service Testing', score: 45, participants: 3, lastActive: '1 час назад', validations: 456),
-  _Room(name: 'Database Schema Validator', score: 88, participants: 12, lastActive: '2 часа назад', validations: 2104),
-  _Room(name: 'Payment Gateway Security', score: 95, participants: 6, lastActive: '3 часа назад', validations: 1678),
-  _Room(name: 'Mobile App Endpoints', score: 62, participants: 4, lastActive: 'Вчера', validations: 723),
-  _Room(name: 'Legacy System Migration', score: 34, participants: 2, lastActive: '2 дня назад', validations: 289),
-];
-
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
 
@@ -63,6 +39,11 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
   late AnimationController _bgController;
   late AnimationController _entryController;
 
+  final _roomService = RoomService();
+  List<Room> _recentRooms = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+
   @override
   void initState() {
     super.initState();
@@ -75,6 +56,27 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 800),
       vsync: this,
     )..forward();
+
+    _loadRecentRooms();
+  }
+
+  Future<void> _loadRecentRooms() async {
+    try {
+      final rooms = await _roomService.getRecentRooms();
+      if (mounted) {
+        setState(() {
+          _recentRooms = rooms;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -109,17 +111,20 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
 
           // Content
           SafeArea(
-            child: _currentNavIndex == 2
-                ? const ProfilePage()
-                : _currentNavIndex == 1
-                    ? const RoomsPage()
-                    : Column(
-                        children: [
-                          _buildHeader(),
-                          _buildPageTitle(),
-                          Expanded(child: _buildContent()),
-                        ],
-                      ),
+            child: IndexedStack(
+              index: _currentNavIndex,
+              children: [
+                Column(
+                  children: [
+                    _buildHeader(),
+                    _buildPageTitle(),
+                    Expanded(child: _buildContent()),
+                  ],
+                ),
+                const RoomsPage(),
+                const ProfilePage(),
+              ],
+            ),
           ),
 
           // Bottom nav
@@ -241,9 +246,26 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
   }
 
   Widget _buildContent() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary),
+        ),
+      );
+    }
+
+    if (_errorMessage != null || _recentRooms.isEmpty) {
+      return const Center(
+        child: Text(
+          'Комнаты не найдены',
+          style: TextStyle(color: _textSecondary, fontSize: 16),
+        ),
+      );
+    }
+
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-      itemCount: _sampleRooms.length,
+      itemCount: _recentRooms.length,
       itemBuilder: (context, index) {
         return FadeTransition(
           opacity: CurvedAnimation(
@@ -266,7 +288,7 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
                 curve: Curves.easeOut,
               ),
             )),
-            child: _RoomCard(room: _sampleRooms[index]),
+            child: _RoomCard(room: _recentRooms[index]),
           ),
         );
       },
@@ -369,7 +391,7 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
 // --- Room card ---
 
 class _RoomCard extends StatefulWidget {
-  final _Room room;
+  final Room room;
   const _RoomCard({required this.room});
 
   @override
@@ -382,7 +404,8 @@ class _RoomCardState extends State<_RoomCard> {
   @override
   Widget build(BuildContext context) {
     final room = widget.room;
-    final color = _scoreColor(room.score);
+    final score = room.userScore ?? 0;
+    final color = _scoreColor(score);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -468,22 +491,22 @@ class _RoomCardState extends State<_RoomCard> {
                             children: [
                               _metaItem(Icons.people_outline, '${room.participants}'),
                               const SizedBox(width: 16),
-                              _metaItem(Icons.access_time, room.lastActive),
+                              _metaItem(Icons.access_time, room.lastActive ?? 'Неизвестно'),
                               const SizedBox(width: 16),
-                              _metaItem(Icons.show_chart, '${room.validations}'),
+                              _metaItem(Icons.show_chart, '${room.submissions ?? 0}'),
                             ],
                           ),
                           const SizedBox(height: 12),
 
                           // Score bar
-                          _ScoreBar(score: room.score),
+                          _ScoreBar(score: score),
                         ],
                       ),
                     ),
                     const SizedBox(width: 16),
 
                     // Circular progress
-                    _CircularScore(score: room.score, color: color),
+                    _CircularScore(score: score, color: color),
                   ],
                 ),
               ],

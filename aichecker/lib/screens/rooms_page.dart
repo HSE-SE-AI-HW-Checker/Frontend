@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/room.dart';
+import '../services/room_service.dart';
 import 'create_room_page.dart';
 
 const _accentPrimary = Color(0xFF00D4FF);
@@ -28,6 +30,11 @@ class _RoomsPageState extends State<RoomsPage>
   final _roomIdController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  final _roomService = RoomService();
+  List<Room> _myRooms = [];
+  bool _isLoadingRooms = true;
+  String? _roomsErrorMessage;
+
   @override
   void initState() {
     super.initState();
@@ -37,6 +44,26 @@ class _RoomsPageState extends State<RoomsPage>
     )..repeat();
 
     _pageController = PageController();
+    _loadMyRooms();
+  }
+
+  Future<void> _loadMyRooms() async {
+    try {
+      final rooms = await _roomService.getMyRooms();
+      if (mounted) {
+        setState(() {
+          _myRooms = rooms;
+          _isLoadingRooms = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _roomsErrorMessage = e.toString();
+          _isLoadingRooms = false;
+        });
+      }
+    }
   }
 
   @override
@@ -432,30 +459,6 @@ class _RoomsPageState extends State<RoomsPage>
   }
 
   Widget _buildMyRoomsTab() {
-    final myRooms = [
-      _RoomData(
-        id: 'A3B7-92F1-CC4E',
-        name: 'Backend Development 2024',
-        isActive: true,
-        participants: 24,
-        created: '15 янв 2024',
-      ),
-      _RoomData(
-        id: 'K9D2-7H3M-P1X5',
-        name: 'React Advanced Course',
-        isActive: true,
-        participants: 18,
-        created: '3 фев 2024',
-      ),
-      _RoomData(
-        id: 'F5J8-L2Q9-T6W4',
-        name: 'Python for Beginners',
-        isActive: false,
-        participants: 35,
-        created: '22 дек 2023',
-      ),
-    ];
-
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
       children: [
@@ -504,12 +507,67 @@ class _RoomsPageState extends State<RoomsPage>
         const SizedBox(height: 24),
 
         // Rooms List
-        ...myRooms.map((room) => _buildRoomItem(room)),
+        if (_isLoadingRooms)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary),
+              ),
+            ),
+          )
+        else if (_roomsErrorMessage != null)
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 32),
+                const SizedBox(height: 12),
+                Text(
+                  'Ошибка загрузки комнат',
+                  style: const TextStyle(
+                    color: _textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _roomsErrorMessage!,
+                  style: const TextStyle(color: _textSecondary, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          )
+        else if (_myRooms.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(40),
+            decoration: BoxDecoration(
+              color: _bgCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _borderColor),
+            ),
+            child: const Center(
+              child: Text(
+                'У вас пока нет созданных комнат',
+                style: TextStyle(color: _textSecondary, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          ..._myRooms.map((room) => _buildRoomItem(room)),
       ],
     );
   }
 
-  Widget _buildRoomItem(_RoomData room) {
+  Widget _buildRoomItem(Room room) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
@@ -563,22 +621,22 @@ class _RoomsPageState extends State<RoomsPage>
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: room.isActive
+                  color: (room.isActive ?? false)
                       ? _success.withValues(alpha: 0.15)
                       : _textSecondary.withValues(alpha: 0.15),
                   border: Border.all(
-                    color: room.isActive
+                    color: (room.isActive ?? false)
                         ? _success.withValues(alpha: 0.3)
                         : _textSecondary.withValues(alpha: 0.3),
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  room.isActive ? 'АКТИВНА' : 'АРХИВ',
+                  (room.isActive ?? false) ? 'АКТИВНА' : 'АРХИВ',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: room.isActive ? _success : _textSecondary,
+                    color: (room.isActive ?? false) ? _success : _textSecondary,
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -614,7 +672,7 @@ class _RoomsPageState extends State<RoomsPage>
               ),
               const SizedBox(width: 6),
               Text(
-                room.created,
+                room.created ?? 'Неизвестно',
                 style: const TextStyle(
                   fontSize: 12,
                   color: _textSecondary,
@@ -626,22 +684,6 @@ class _RoomsPageState extends State<RoomsPage>
       ),
     );
   }
-}
-
-class _RoomData {
-  final String id;
-  final String name;
-  final bool isActive;
-  final int participants;
-  final String created;
-
-  _RoomData({
-    required this.id,
-    required this.name,
-    required this.isActive,
-    required this.participants,
-    required this.created,
-  });
 }
 
 // Background painters
