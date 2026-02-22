@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'profile_page.dart';
 import 'room_page.dart';
+import 'rooms_page.dart';
 
 const _accentPrimary = Color(0xFF00D4FF);
 const _accentSecondary = Color(0xFF7C3AED);
@@ -110,13 +111,15 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
           SafeArea(
             child: _currentNavIndex == 2
                 ? const ProfilePage()
-                : Column(
-                    children: [
-                      _buildHeader(),
-                      _buildPageTitle(),
-                      Expanded(child: _buildContent()),
-                    ],
-                  ),
+                : _currentNavIndex == 1
+                    ? const RoomsPage()
+                    : Column(
+                        children: [
+                          _buildHeader(),
+                          _buildPageTitle(),
+                          Expanded(child: _buildContent()),
+                        ],
+                      ),
           ),
 
           // Bottom nav
