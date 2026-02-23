@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../services/room_service.dart';
+
 const _accentPrimary = Color(0xFF00D4FF);
 const _accentSecondary = Color(0xFF7C3AED);
 const _textPrimary = Color(0xFFF9FAFB);
@@ -27,6 +29,14 @@ class _CreateRoomPageState extends State<CreateRoomPage>
   String? _selectedLanguage;
   final List<_Criterion> _criteria = [];
   int _criterionCounter = 0;
+  final _roomService = RoomService();
+  bool _isCreating = false;
+  String? _createError;
+  bool _nameHasError = false;
+  bool _descriptionHasError = false;
+  bool _languageHasError = false;
+  List<String> _languages = [];
+  bool _isLoadingLanguages = true;
 
   @override
   void initState() {
@@ -36,8 +46,22 @@ class _CreateRoomPageState extends State<CreateRoomPage>
       vsync: this,
     )..repeat();
 
-    // Add initial criterion
     _addCriterion();
+    _loadLanguages();
+  }
+
+  Future<void> _loadLanguages() async {
+    try {
+      final languages = await _roomService.getLanguages();
+      if (mounted) {
+        setState(() {
+          _languages = languages;
+          _isLoadingLanguages = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingLanguages = false);
+    }
   }
 
   @override
@@ -70,30 +94,31 @@ class _CreateRoomPageState extends State<CreateRoomPage>
   }
 
   Future<void> _validateCriterion(int index) async {
-    if (_criteria[index].controller.text.trim().isEmpty) {
-      return;
-    }
-
     setState(() {
       _criteria[index].state = _CriterionState.validating;
     });
 
-    // Simulate API call
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (!mounted) return;
-
-    // Random result: 70% success, 30% warning
-    final isSuccess = Random().nextDouble() > 0.3;
-
-    setState(() {
-      _criteria[index].state =
-          isSuccess ? _CriterionState.success : _CriterionState.warning;
-      _criteria[index].message = isSuccess
-          ? 'Критерий может быть автоматически проверен ИИ'
-          : 'Критерий слишком субъективен для автопроверки ИИ';
-      _criteria[index].aiEnabled = isSuccess;
-    });
+    try {
+      final canAiVerify = await _roomService.verifyCriterion(
+        _criteria[index].controller.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _criteria[index].state =
+            canAiVerify ? _CriterionState.success : _CriterionState.warning;
+        _criteria[index].message = canAiVerify
+            ? 'Критерий может быть автоматически проверен ИИ'
+            : 'Критерий слишком субъективен для автопроверки ИИ';
+        _criteria[index].aiEnabled = canAiVerify;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _criteria[index].state = _CriterionState.initial;
+        _criteria[index].hasError = true;
+        _criteria[index].errorMessage = 'Ошибка проверки, попробуйте снова';
+      });
+    }
   }
 
   void _toggleAI(int index) {
@@ -216,7 +241,8 @@ class _CreateRoomPageState extends State<CreateRoomPage>
         TextField(
           controller: _nameController,
           style: const TextStyle(color: _textPrimary, fontSize: 15),
-          decoration: _inputDecoration('Backend Development 2024'),
+          decoration: _inputDecoration('Backend Development 2024', isError: _nameHasError, errorText: 'Введите название комнаты'),
+          onChanged: (_) { if (_nameHasError) setState(() => _nameHasError = false); },
         ),
         const SizedBox(height: 20),
 
@@ -230,25 +256,40 @@ class _CreateRoomPageState extends State<CreateRoomPage>
           ),
         ),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          value: _selectedLanguage,
-          dropdownColor: const Color(0xFF1F2937),
-          style: const TextStyle(color: _textPrimary, fontSize: 15),
-          decoration: _inputDecoration('Выберите язык'),
-          items: const [
-            DropdownMenuItem(value: 'typescript', child: Text('TypeScript')),
-            DropdownMenuItem(value: 'javascript', child: Text('JavaScript')),
-            DropdownMenuItem(value: 'python', child: Text('Python')),
-            DropdownMenuItem(value: 'java', child: Text('Java')),
-            DropdownMenuItem(value: 'csharp', child: Text('C#')),
-            DropdownMenuItem(value: 'go', child: Text('Go')),
-            DropdownMenuItem(value: 'rust', child: Text('Rust')),
-            DropdownMenuItem(value: 'php', child: Text('PHP')),
-          ],
-          onChanged: (value) {
-            setState(() => _selectedLanguage = value);
-          },
-        ),
+        if (_isLoadingLanguages)
+          Container(
+            height: 52,
+            decoration: BoxDecoration(
+              color: const Color(0x801F2937),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary),
+                ),
+              ),
+            ),
+          )
+        else
+          DropdownButtonFormField<String>(
+            initialValue: _selectedLanguage,
+            dropdownColor: const Color(0xFF1F2937),
+            style: const TextStyle(color: _textPrimary, fontSize: 15),
+            decoration: _inputDecoration('Выберите язык', isError: _languageHasError, errorText: 'Выберите язык программирования'),
+            items: _languages
+                .map((lang) => DropdownMenuItem(value: lang, child: Text(lang)))
+                .toList(),
+            onChanged: (value) {
+              setState(() {
+                _selectedLanguage = value;
+                _languageHasError = false;
+              });
+            },
+          ),
         const SizedBox(height: 20),
 
         // Description
@@ -267,7 +308,10 @@ class _CreateRoomPageState extends State<CreateRoomPage>
           style: const TextStyle(color: _textPrimary, fontSize: 15),
           decoration: _inputDecoration(
             'Опишите задачу, которую должны выполнить участники...',
+            isError: _descriptionHasError,
+            errorText: 'Введите описание задачи',
           ),
+          onChanged: (_) { if (_descriptionHasError) setState(() => _descriptionHasError = false); },
         ),
       ],
     );
@@ -435,21 +479,39 @@ class _CreateRoomPageState extends State<CreateRoomPage>
                 enabled: criterion.state == _CriterionState.initial,
                 readOnly: criterion.state != _CriterionState.initial,
                 style: const TextStyle(color: _textPrimary, fontSize: 14),
+                onChanged: (_) {
+                  if (criterion.hasError) {
+                    setState(() {
+                      criterion.hasError = false;
+                      criterion.errorMessage = null;
+                    });
+                  }
+                },
                 decoration: InputDecoration(
                   hintText: 'Например: Покрытие unit-тестами ≥ 80%',
                   hintStyle: TextStyle(
                     color: _textSecondary.withValues(alpha: 0.4),
                   ),
                   filled: true,
-                  fillColor: const Color(0x801F2937),
+                  fillColor: criterion.hasError
+                      ? _error.withValues(alpha: 0.05)
+                      : const Color(0x801F2937),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
+                    borderSide: criterion.hasError
+                        ? const BorderSide(color: _error, width: 1.5)
+                        : BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: criterion.hasError
+                        ? const BorderSide(color: _error, width: 1.5)
+                        : BorderSide.none,
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(
-                      color: _accentPrimary,
+                    borderSide: BorderSide(
+                      color: criterion.hasError ? _error : _accentPrimary,
                       width: 1.5,
                     ),
                   ),
@@ -459,6 +521,8 @@ class _CreateRoomPageState extends State<CreateRoomPage>
                     top: 12,
                     bottom: 12,
                   ),
+                  errorText: criterion.hasError ? criterion.errorMessage : null,
+                  errorStyle: const TextStyle(color: _error, fontSize: 12),
                 ),
               ),
 
@@ -629,44 +693,122 @@ class _CreateRoomPageState extends State<CreateRoomPage>
     );
   }
 
+  Future<void> _createRoom() async {
+    // Валидация
+    final nameEmpty = _nameController.text.trim().isEmpty;
+    final descEmpty = _descriptionController.text.trim().isEmpty;
+    final langEmpty = _selectedLanguage == null;
+    final criteriaErrors = _criteria.map((c) => c.controller.text.trim().isEmpty).toList();
+
+    if (nameEmpty || descEmpty || langEmpty || criteriaErrors.contains(true)) {
+      setState(() {
+        _nameHasError = nameEmpty;
+        _descriptionHasError = descEmpty;
+        _languageHasError = langEmpty;
+        for (int i = 0; i < _criteria.length; i++) {
+          _criteria[i].hasError = criteriaErrors[i];
+          if (criteriaErrors[i]) _criteria[i].errorMessage = 'Введите текст критерия';
+        }
+      });
+      return;
+    }
+
+    setState(() {
+      _isCreating = true;
+      _createError = null;
+    });
+    try {
+      final criteriaList = _criteria
+          .map((c) => {
+                'criterion_text': c.controller.text.trim(),
+                'is_ai_verified': c.aiEnabled,
+              })
+          .toList();
+      await _roomService.createRoom(
+        name: _nameController.text.trim(),
+        description: _descriptionController.text.trim(),
+        criteria: criteriaList,
+        language: _selectedLanguage,
+      );
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) setState(() => _createError = e.toString());
+    } finally {
+      if (mounted) setState(() => _isCreating = false);
+    }
+  }
+
   Widget _buildCreateButton() {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        gradient: const LinearGradient(
-          colors: [_accentPrimary, _accentSecondary],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _accentPrimary.withValues(alpha: 0.3),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
+    return Column(
+      children: [
+        if (_createError != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: _error.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _error.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: _error, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _createError!,
+                    style: const TextStyle(color: _error, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            // TODO: Create room
-            Navigator.of(context).pop();
-          },
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            alignment: Alignment.center,
-            child: const Text(
-              'Создать комнату',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: const LinearGradient(
+              colors: [_accentPrimary, _accentSecondary],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _accentPrimary.withValues(alpha: 0.3),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _isCreating ? null : _createRoom,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                alignment: Alignment.center,
+                child: _isCreating
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text(
+                        'Создать комнату',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
               ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -698,22 +840,32 @@ class _CreateRoomPageState extends State<CreateRoomPage>
     );
   }
 
-  InputDecoration _inputDecoration(String hint) {
+  InputDecoration _inputDecoration(String hint, {bool isError = false, String? errorText}) {
     return InputDecoration(
       hintText: hint,
       hintStyle: TextStyle(
         color: _textSecondary.withValues(alpha: 0.4),
       ),
       filled: true,
-      fillColor: const Color(0x801F2937),
+      fillColor: isError
+          ? _error.withValues(alpha: 0.05)
+          : const Color(0x801F2937),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderSide: isError
+            ? const BorderSide(color: _error, width: 1.5)
+            : BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: isError
+            ? const BorderSide(color: _error, width: 1.5)
+            : BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: _accentPrimary,
+        borderSide: BorderSide(
+          color: isError ? _error : _accentPrimary,
           width: 1.5,
         ),
       ),
@@ -721,6 +873,8 @@ class _CreateRoomPageState extends State<CreateRoomPage>
         horizontal: 16,
         vertical: 14,
       ),
+      errorText: isError ? errorText : null,
+      errorStyle: const TextStyle(color: _error, fontSize: 12),
     );
   }
 }
@@ -732,14 +886,14 @@ class _Criterion {
   final TextEditingController controller;
   _CriterionState state;
   String? message;
-  bool aiEnabled;
+  bool aiEnabled = false;
+  bool hasError = false;
+  String? errorMessage;
 
   _Criterion({
     required this.number,
     required this.controller,
     required this.state,
-    this.message,
-    this.aiEnabled = false,
   });
 }
 

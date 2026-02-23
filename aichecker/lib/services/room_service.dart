@@ -57,6 +57,51 @@ class RoomService {
     }
   }
 
+  /// Получить список доступных языков программирования
+  Future<List<String>> getLanguages() async {
+    try {
+      final response = await _dio.get('/languages');
+      final List<dynamic> data = response.data as List<dynamic>;
+      return data.map((e) => e.toString()).toList();
+    } on DioException catch (e) {
+      final error = _handleError(e, 'Ошибка загрузки языков');
+      throw Exception(error['message']);
+    }
+  }
+
+  /// Проверить критерий на возможность автопроверки ИИ
+  Future<bool> verifyCriterion(String criterionText) async {
+    try {
+      final response = await _dio.post('/criteria/verify', data: {
+        'criterion_text': criterionText,
+      });
+      return response.data['can_ai_verified'] as bool;
+    } on DioException catch (e) {
+      final error = _handleError(e, 'Ошибка проверки критерия');
+      throw Exception(error['message']);
+    }
+  }
+
+  /// Создать комнату
+  Future<void> createRoom({
+    required String name,
+    required String description,
+    required List<Map<String, dynamic>> criteria,
+    String? language,
+  }) async {
+    try {
+      await _dio.post('/create_room', data: {
+        'name': name,
+        'description': description,
+        'criteria': criteria,
+        if (language != null) 'language': language,
+      });
+    } on DioException catch (e) {
+      final error = _handleError(e, 'Ошибка создания комнаты');
+      throw Exception(error['message']);
+    }
+  }
+
   /// Отправить решение задачи
   Future<Map<String, dynamic>> submitSolution(String githubUrl) async {
     try {
