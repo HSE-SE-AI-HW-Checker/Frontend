@@ -1,0 +1,36 @@
+{
+  "rooms": [
+    {
+      "id": "1",
+      "name": "Алгоритмы и структуры данных",
+      "participants": 24,
+      "submissions": 12,
+      "user_score": 85,
+      "last_active": "5 мин назад"
+    },
+    {
+      "id": "2",
+      "name": "Backend Development",
+      "participants": 18,
+      "submissions": 8,
+      "user_score": 72,
+      "last_active": "15 мин назад"
+    },
+    {
+      "id": "3",
+      "name": "Machine Learning Basics",
+      "participants": 32,
+      "submissions": 15,
+      "user_score": 0,
+      "last_active": "1 час назад"
+    },
+    {
+      "id": "4",
+      "name": "Web Development",
+      "participants": 45,
+      "submissions": 22,
+      "user_score": 95,
+      "last_active": "Вчера"
+    }
+  ]
+}
