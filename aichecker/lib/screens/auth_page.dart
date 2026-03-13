@@ -242,7 +242,7 @@ class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 8),
           const Text(
-            'SECURE AUTH',
+            'AI SCORING SYSTEM',
             style: TextStyle(
               fontSize: 12,
               color: _textSecondary,

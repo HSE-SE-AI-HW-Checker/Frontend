@@ -94,6 +94,7 @@ class _CreateRoomPageState extends State<CreateRoomPage>
   }
 
   Future<void> _validateCriterion(int index) async {
+    FocusScope.of(context).unfocus();
     setState(() {
       _criteria[index].state = _CriterionState.validating;
     });
@@ -472,108 +473,86 @@ class _CreateRoomPageState extends State<CreateRoomPage>
             const SizedBox(height: 12),
 
           // Input with validation button
-          Stack(
-            children: [
-              TextField(
-                controller: criterion.controller,
-                enabled: criterion.state == _CriterionState.initial,
-                readOnly: criterion.state != _CriterionState.initial,
-                style: const TextStyle(color: _textPrimary, fontSize: 14),
-                onChanged: (_) {
-                  if (criterion.hasError) {
-                    setState(() {
-                      criterion.hasError = false;
-                      criterion.errorMessage = null;
-                    });
-                  }
-                },
-                decoration: InputDecoration(
-                  hintText: 'Например: Покрытие unit-тестами ≥ 80%',
-                  hintStyle: TextStyle(
-                    color: _textSecondary.withValues(alpha: 0.4),
-                  ),
-                  filled: true,
-                  fillColor: criterion.hasError
-                      ? _error.withValues(alpha: 0.05)
-                      : const Color(0x801F2937),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: criterion.hasError
-                        ? const BorderSide(color: _error, width: 1.5)
-                        : BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: criterion.hasError
-                        ? const BorderSide(color: _error, width: 1.5)
-                        : BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(
-                      color: criterion.hasError ? _error : _accentPrimary,
-                      width: 1.5,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.only(
-                    left: 16,
-                    right: 100,
-                    top: 12,
-                    bottom: 12,
-                  ),
-                  errorText: criterion.hasError ? criterion.errorMessage : null,
-                  errorStyle: const TextStyle(color: _error, fontSize: 12),
+          TextField(
+            controller: criterion.controller,
+            enabled: criterion.state == _CriterionState.initial,
+            readOnly: criterion.state != _CriterionState.initial,
+            style: const TextStyle(color: _textPrimary, fontSize: 14),
+            onChanged: (_) {
+              if (criterion.hasError) {
+                setState(() {
+                  criterion.hasError = false;
+                  criterion.errorMessage = null;
+                });
+              }
+            },
+            decoration: InputDecoration(
+              hintText: 'Например: Покрытие unit-тестами ≥ 80%',
+              hintStyle: TextStyle(
+                color: _textSecondary.withValues(alpha: 0.4),
+              ),
+              filled: true,
+              fillColor: criterion.hasError
+                  ? _error.withValues(alpha: 0.05)
+                  : const Color(0x801F2937),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: criterion.hasError
+                    ? const BorderSide(color: _error, width: 1.5)
+                    : BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: criterion.hasError
+                    ? const BorderSide(color: _error, width: 1.5)
+                    : BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(
+                  color: criterion.hasError ? _error : _accentPrimary,
+                  width: 1.5,
                 ),
               ),
-
-              // Validate button or loading spinner
-              if (criterion.state == _CriterionState.initial)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: ElevatedButton(
-                    onPressed: () => _validateCriterion(index),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              errorText: criterion.hasError ? criterion.errorMessage : null,
+              errorStyle: const TextStyle(color: _error, fontSize: 12),
+              suffix: criterion.state == _CriterionState.initial
+                  ? GestureDetector(
+                      onTap: () => _validateCriterion(index),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _accentPrimary,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Проверить',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      elevation: 0,
-                    ).copyWith(
-                      backgroundColor: WidgetStateProperty.all(
-                        _accentPrimary,
-                      ),
-                    ),
-                    child: const Text(
-                      'Проверить',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                )
-              else if (criterion.state == _CriterionState.validating)
-                Positioned(
-                  right: 16,
-                  top: 16,
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        _accentPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+                    )
+                  : criterion.state == _CriterionState.validating
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary),
+                          ),
+                        )
+                      : null,
+            ),
           ),
 
           // Validation message

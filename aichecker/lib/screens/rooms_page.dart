@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/room.dart';
 import '../services/room_service.dart';
 import 'create_room_page.dart';
+import 'room_page.dart';
 
 const _accentPrimary = Color(0xFF00D4FF);
 const _accentSecondary = Color(0xFF7C3AED);
@@ -34,6 +35,8 @@ class _RoomsPageState extends State<RoomsPage>
   List<Room> _myRooms = [];
   bool _isLoadingRooms = true;
   String? _roomsErrorMessage;
+  bool _isJoining = false;
+  String? _joinError;
 
   @override
   void initState() {
@@ -45,6 +48,32 @@ class _RoomsPageState extends State<RoomsPage>
 
     _pageController = PageController();
     _loadMyRooms();
+  }
+
+  Future<void> _joinRoom() async {
+    final roomId = _roomIdController.text.trim();
+    final password = _passwordController.text.trim();
+
+    setState(() {
+      _isJoining = true;
+      _joinError = null;
+    });
+
+    try {
+      await _roomService.joinRoom(roomId, password);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => RoomPage(roomId: roomId),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() => _joinError = 'Неправильный логин комнаты или пароль');
+      }
+    } finally {
+      if (mounted) setState(() => _isJoining = false);
+    }
   }
 
   Future<void> _loadMyRooms() async {
@@ -73,6 +102,14 @@ class _RoomsPageState extends State<RoomsPage>
     _roomIdController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  String _formatDate(String? raw) {
+    if (raw == null) return 'Неизвестно';
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) return raw;
+    const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
   }
 
   void _onTabChanged(int index) {
@@ -381,6 +418,33 @@ class _RoomsPageState extends State<RoomsPage>
               ),
               const SizedBox(height: 20),
 
+              // Join error
+              if (_joinError != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _joinError!,
+                          style: const TextStyle(color: Colors.red, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 20),
+
               // Join Button
               Container(
                 decoration: BoxDecoration(
@@ -400,21 +464,28 @@ class _RoomsPageState extends State<RoomsPage>
                   color: Colors.transparent,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                      // TODO: Join room
-                    },
+                    onTap: _isJoining ? null : _joinRoom,
                     child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       alignment: Alignment.center,
-                      child: const Text(
-                        'Подключиться',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      child: _isJoining
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Подключиться',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                     ),
                   ),
                 ),
@@ -472,12 +543,13 @@ class _RoomsPageState extends State<RoomsPage>
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const CreateRoomPage(),
                   ),
                 );
+                _loadMyRooms();
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -555,7 +627,7 @@ class _RoomsPageState extends State<RoomsPage>
             ),
             child: const Center(
               child: Text(
-                'У вас пока нет созданных комнат',
+                'У вас пока нет комнат',
                 style: TextStyle(color: _textSecondary, fontSize: 16),
                 textAlign: TextAlign.center,
               ),
@@ -568,7 +640,11 @@ class _RoomsPageState extends State<RoomsPage>
   }
 
   Widget _buildRoomItem(Room room) {
-    return Container(
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => RoomPage(roomId: room.id)),
+      ),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -672,7 +748,7 @@ class _RoomsPageState extends State<RoomsPage>
               ),
               const SizedBox(width: 6),
               Text(
-                room.created ?? 'Неизвестно',
+                _formatDate(room.created),
                 style: const TextStyle(
                   fontSize: 12,
                   color: _textSecondary,
@@ -682,6 +758,7 @@ class _RoomsPageState extends State<RoomsPage>
           ),
         ],
       ),
+    ),
     );
   }
 }
