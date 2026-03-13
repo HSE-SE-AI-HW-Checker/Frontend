@@ -416,7 +416,7 @@ class _RoomCardState extends State<_RoomCard> {
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => RoomPage(roomName: room.name),
+                builder: (_) => RoomPage(roomId: room.id),
               ),
             );
           },
@@ -491,7 +491,13 @@ class _RoomCardState extends State<_RoomCard> {
                             children: [
                               _metaItem(Icons.people_outline, '${room.participants}'),
                               const SizedBox(width: 16),
-                              _metaItem(Icons.access_time, room.lastActive ?? 'Неизвестно'),
+                              Flexible(
+                                child: _metaItem(
+                                  Icons.access_time,
+                                  _formatDate(room.lastActive),
+                                  overflow: true,
+                                ),
+                              ),
                               const SizedBox(width: 16),
                               _metaItem(Icons.show_chart, '${room.submissions ?? 0}'),
                             ],
@@ -517,16 +523,50 @@ class _RoomCardState extends State<_RoomCard> {
     );
   }
 
-  Widget _metaItem(IconData icon, String text) {
+  String _plural(int n, String one, String few, String many) {
+    final mod10 = n % 10;
+    final mod100 = n % 100;
+    if (mod10 == 1 && mod100 != 11) return '$n $one';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return '$n $few';
+    return '$n $many';
+  }
+
+  String _formatDate(String? raw) {
+    if (raw == null) return 'Неизвестно';
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) return raw;
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'только что';
+    if (diff.inMinutes < 60) return '${_plural(diff.inMinutes, 'минуту', 'минуты', 'минут')} назад';
+    if (diff.inHours < 24) return '${_plural(diff.inHours, 'час', 'часа', 'часов')} назад';
+    if (diff.inDays < 7) return '${_plural(diff.inDays, 'день', 'дня', 'дней')} назад';
+    final weeks = (diff.inDays / 7).floor();
+    if (diff.inDays < 30) return '${_plural(weeks, 'неделю', 'недели', 'недель')} назад';
+    final months = (diff.inDays / 30).floor();
+    if (diff.inDays < 365) return '${_plural(months, 'месяц', 'месяца', 'месяцев')} назад';
+    final years = (diff.inDays / 365).floor();
+    return '${_plural(years, 'год', 'года', 'лет')} назад';
+  }
+
+  Widget _metaItem(IconData icon, String text, {bool overflow = false}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 14, color: _textSecondary.withValues(alpha: 0.7)),
         const SizedBox(width: 4),
-        Text(
-          text,
-          style: const TextStyle(fontSize: 12, color: _textSecondary),
-        ),
+        if (overflow)
+          Flexible(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12, color: _textSecondary),
+              overflow: TextOverflow.ellipsis,
+            ),
+          )
+        else
+          Text(
+            text,
+            style: const TextStyle(fontSize: 12, color: _textSecondary),
+          ),
       ],
     );
   }
@@ -556,7 +596,7 @@ class _ScoreBar extends StatelessWidget {
         Container(
           height: 6,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
+            color: const Color(0xFF1F2937),
             borderRadius: BorderRadius.circular(3),
           ),
           child: ClipRRect(

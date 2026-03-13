@@ -26,17 +26,16 @@ class Room {
   });
 
   factory Room.fromJson(Map<String, dynamic> json) {
+    final rawScore = json['final_score'] ?? json['user_score'];
     return Room(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      // API возвращает participant_count, моки могут использовать participants
+      id: json['room_id'] as String? ?? json['id'] as String,
+      name: json['room_name'] as String? ?? json['name'] as String,
       participants: (json['participant_count'] ?? json['participants'] ?? 0) as int,
-      submissions: json['submissions'] as int?,
-      userScore: json['user_score'] as int?,
-      lastActive: json['last_active'] as String?,
+      submissions: (json['submissions_count'] ?? json['submissions']) as int?,
+      userScore: rawScore is double ? rawScore.round() : rawScore as int?,
+      lastActive: json['last_visit'] as String? ?? json['last_active'] as String?,
       deadline: json['deadline'] as String?,
       isActive: json['is_active'] as bool?,
-      // API возвращает created_at, моки могут использовать created
       created: json['created_at'] as String? ?? json['created'] as String?,
       description: json['description'] as String?,
       criteria: (json['criteria'] as List<dynamic>?)?.cast<String>(),

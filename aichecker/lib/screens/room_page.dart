@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-
+import '../models/room_detail.dart';
 import '../services/room_service.dart';
 
 const _accentPrimary = Color(0xFF00D4FF);
@@ -15,14 +15,9 @@ const _error = Color(0xFFEF4444);
 const _warning = Color(0xFFF59E0B);
 
 class RoomPage extends StatefulWidget {
-  final String roomName;
-  final String company;
+  final String roomId;
 
-  const RoomPage({
-    super.key,
-    required this.roomName,
-    this.company = 'HSE Inc',
-  });
+  const RoomPage({super.key, required this.roomId});
 
   @override
   State<RoomPage> createState() => _RoomPageState();
@@ -39,6 +34,11 @@ class _RoomPageState extends State<RoomPage>
   String? _submissionError;
   String? _submissionSuccess;
 
+  RoomDetail? _roomDetail;
+  bool _isLoadingDetail = true;
+  String? _loadError;
+  String? _deadline;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +49,37 @@ class _RoomPageState extends State<RoomPage>
 
     _pageController = PageController();
     _githubController.addListener(_clearSubmissionMessages);
+    _loadRoomDetail();
+  }
+
+  Future<void> _loadRoomDetail() async {
+    try {
+      final detail = await _roomService.getRoom(widget.roomId);
+      if (mounted) setState(() { _roomDetail = detail; _isLoadingDetail = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loadError = e.toString(); _isLoadingDetail = false; });
+    }
+    try {
+      final memberInfo = await _roomService.getRoomMemberInfo(widget.roomId);
+      final rawDeadline = memberInfo['deadline'] as String?;
+      if (rawDeadline != null && mounted) {
+        setState(() { _deadline = _formatDeadline(rawDeadline); });
+      }
+    } catch (_) {}
+  }
+
+  String _formatDeadline(String iso) {
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      final day = dt.day.toString().padLeft(2, '0');
+      final month = dt.month.toString().padLeft(2, '0');
+      final year = dt.year;
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+      return '$day.$month.$year $hour:$minute';
+    } catch (_) {
+      return iso;
+    }
   }
 
   @override
@@ -216,31 +247,26 @@ class _RoomPageState extends State<RoomPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.roomName,
+                      _roomDetail?.name ?? widget.roomId,
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: _textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.business_outlined,
-                          size: 14,
-                          color: _textSecondary,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          widget.company,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: _textSecondary,
+                    if (_deadline != null) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.schedule, size: 14, color: _textSecondary),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Дедлайн: $_deadline',
+                            style: const TextStyle(fontSize: 13, color: _textSecondary),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -309,99 +335,109 @@ class _RoomPageState extends State<RoomPage>
     );
   }
 
+  Widget _sectionTitle(String text, Color stripeColor) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(
+            color: stripeColor,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: _textPrimary,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTaskTab() {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        // Task Card
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: _bgCard,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _borderColor),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Описание задачи',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: _textPrimary,
-                    ),
+        if (_isLoadingDetail)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary),
+              ),
+            ),
+          )
+        else if (_loadError != null)
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _error.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _error.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: _error, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _loadError!,
+                    style: const TextStyle(color: _textSecondary, fontSize: 14),
                   ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
+                ),
+              ],
+            ),
+          )
+        else if (_roomDetail != null)
+          // Task Card
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: _bgCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: _sectionTitle('Описание задачи', _accentPrimary)),
+                    if (_roomDetail!.language != null && _roomDetail!.language!.isNotEmpty)
                       Text(
-                        'TypeScript',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          color: _textSecondary.withValues(alpha: 0.5),
+                        _roomDetail!.language!,
+                        style: const TextStyle(
                           fontFamily: 'monospace',
-                          letterSpacing: 1,
+                          fontSize: 16,
+                          color: Color(0x809CA3AF),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.access_time,
-                            size: 14,
-                            color: _textSecondary,
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'До 25 фев',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _roomDetail!.description,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.6,
+                    color: _textSecondary,
                   ),
+                ),
+                if (_roomDetail!.criteria.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  _sectionTitle('Критерии', _accentPrimary),
+                  const SizedBox(height: 12),
+                  ..._roomDetail!.criteria.map(_buildCriterionItem),
                 ],
-              ),
-              const SizedBox(height: 16),
-
-              // Description
-              const Text(
-                'Разработать REST API для системы аутентификации с использованием JWT токенов. '
-                'Необходимо реализовать endpoints для регистрации, входа, обновления токена и выхода. '
-                'Все данные должны валидироваться согласно схемам. Обязательно покрытие тестами критических путей.',
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 1.6,
-                  color: _textSecondary,
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Criteria
-              const Text(
-                'Критерии',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: _textPrimary,
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              ..._buildCriteria(),
-            ],
+              ],
+            ),
           ),
-        ),
         const SizedBox(height: 20),
 
         // Submit Card
@@ -415,14 +451,7 @@ class _RoomPageState extends State<RoomPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Отправить решение',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: _textPrimary,
-                ),
-              ),
+              _sectionTitle('Отправить решение', _accentSecondary),
               const SizedBox(height: 16),
               const Text(
                 'Ссылка на репозиторий',
@@ -595,82 +624,52 @@ class _RoomPageState extends State<RoomPage>
     );
   }
 
-  List<Widget> _buildCriteria() {
-    final criteria = [
-      ('Покрытие unit-тестами ≥ 80%', true),
-      ('Все endpoints возвращают правильные HTTP статусы', true),
-      ('Валидация входных данных с использованием схем', false),
-      ('Обработка ошибок и edge cases', true),
-      ('Документация API (README + комментарии)', false),
-      ('Соблюдение code style и линтер без ошибок', true),
-    ];
-
-    return criteria.map((criterion) {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.02),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.05),
+  Widget _buildCriterionItem(RoomCriterion criterion) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.02),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check, size: 20, color: _accentPrimary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              criterion.criterionText,
+              style: const TextStyle(fontSize: 14, height: 1.5, color: _textPrimary),
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 20,
-              color: _accentPrimary,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                criterion.$1,
-                style: const TextStyle(
-                  fontSize: 14,
-                  height: 1.5,
-                  color: _textPrimary,
-                ),
+          if (criterion.isAiVerified)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: _accentSecondary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: _accentSecondary.withValues(alpha: 0.4)),
               ),
-            ),
-            if (criterion.$2)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 3,
-                ),
-                decoration: BoxDecoration(
-                  color: _accentSecondary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: _accentSecondary.withValues(alpha: 0.4),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.psychology_outlined,
-                      size: 12,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.psychology_outlined, size: 12, color: _accentSecondary),
+                  const SizedBox(width: 4),
+                  Text(
+                    'AUTO',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
                       color: _accentSecondary,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'AUTO',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: _accentSecondary,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-          ],
-        ),
-      );
-    }).toList();
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildResultTab() {

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'api_client.dart';
 import '../models/room.dart';
+import '../models/room_detail.dart';
 
 class RoomService {
   final _apiClient = ApiClient();
@@ -31,8 +32,8 @@ class RoomService {
 
     try {
       final response = await _dio.get('/rooms/recent');
-      final List<dynamic> data = response.data['rooms'];
-      return data.map((json) => Room.fromJson(json)).toList();
+      final List<dynamic> data = response.data as List<dynamic>;
+      return data.map((json) => Room.fromJson(json as Map<String, dynamic>)).toList();
     } on DioException catch (e) {
       final error = _handleError(e, 'Ошибка загрузки недавних комнат');
       throw Exception(error['message']);
@@ -65,6 +66,42 @@ class RoomService {
       return data.map((e) => e.toString()).toList();
     } on DioException catch (e) {
       final error = _handleError(e, 'Ошибка загрузки языков');
+      throw Exception(error['message']);
+    }
+  }
+
+  /// Получить детальную информацию о комнате
+  Future<RoomDetail> getRoom(String roomId) async {
+    try {
+      final response = await _dio.get('/rooms/$roomId');
+      return RoomDetail.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      final error = _handleError(e, 'Ошибка загрузки комнаты');
+      throw Exception(error['message']);
+    }
+  }
+
+  /// Получить информацию участника комнаты (включая дедлайн)
+  Future<Map<String, dynamic>> getRoomMemberInfo(String roomId) async {
+    try {
+      final response = await _dio.get('/rooms/$roomId/members/me');
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      final error = _handleError(e, 'Ошибка загрузки информации участника');
+      throw Exception(error['message']);
+    }
+  }
+
+  /// Подключиться к комнате
+  Future<Map<String, dynamic>> joinRoom(String roomId, String password) async {
+    try {
+      final response = await _dio.post(
+        '/rooms/$roomId/join',
+        data: {'password': password},
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      final error = _handleError(e, 'Ошибка подключения к комнате');
       throw Exception(error['message']);
     }
   }

@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 import 'token_storage.dart';
 
 class ApiClient {
-  static const String baseUrl = 'http://localhost:8080';
+  static const String baseUrl = 'http://192.168.0.11:8080';
   late final Dio _dio;
 
   // Singleton pattern
