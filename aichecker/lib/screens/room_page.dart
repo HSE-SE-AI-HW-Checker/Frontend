@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../models/room_detail.dart';
 import '../services/room_service.dart';
 
@@ -654,7 +655,12 @@ class _RoomPageState extends State<RoomPage>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.psychology_outlined, size: 12, color: _accentSecondary),
+                  SvgPicture.asset(
+                    'assets/icons/ai_chip.svg',
+                    width: 12,
+                    height: 12,
+                    colorFilter: ColorFilter.mode(_accentSecondary, BlendMode.srcIn),
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     'AUTO',
@@ -902,15 +908,19 @@ class _RoomPageState extends State<RoomPage>
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                badge == ResultBadge.auto
-                                    ? Icons.psychology_outlined
-                                    : Icons.person_outline,
-                                size: 11,
-                                color: badge == ResultBadge.auto
-                                    ? _accentSecondary
-                                    : _accentPrimary,
-                              ),
+                              if (badge == ResultBadge.auto)
+                                SvgPicture.asset(
+                                  'assets/icons/ai_chip.svg',
+                                  width: 11,
+                                  height: 11,
+                                  colorFilter: ColorFilter.mode(_accentSecondary, BlendMode.srcIn),
+                                )
+                              else
+                                const Icon(
+                                  Icons.person_outline,
+                                  size: 11,
+                                  color: _accentPrimary,
+                                ),
                               const SizedBox(width: 4),
                               Text(
                                 badge == ResultBadge.auto ? 'AUTO' : 'РЕВЬЮ',
