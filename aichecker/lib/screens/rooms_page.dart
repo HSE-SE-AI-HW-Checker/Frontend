@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/room.dart';
 import '../services/room_service.dart';
 import 'create_room_page.dart';
+import 'manage_room_page.dart';
 import 'room_page.dart';
 
 const _accentPrimary = Color(0xFF00D4FF);
@@ -714,6 +715,29 @@ class _RoomsPageState extends State<RoomsPage>
                     fontWeight: FontWeight.w600,
                     color: (room.isActive ?? false) ? _success : _textSecondary,
                     letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ManageRoomPage(roomId: room.id),
+                  ),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.settings_outlined,
+                    size: 16,
+                    color: _textSecondary,
                   ),
                 ),
               ),
