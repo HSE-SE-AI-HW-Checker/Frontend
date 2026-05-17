@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/room_detail.dart';
 import '../services/room_service.dart';
 
@@ -15,6 +17,22 @@ const _success = Color(0xFF10B981);
 const _error = Color(0xFFEF4444);
 const _warning = Color(0xFFF59E0B);
 
+class _RequirementResult {
+  final String title;
+  final int score;
+  final int maxScore;
+  final String justification;
+  final String suggestions;
+
+  const _RequirementResult({
+    required this.title,
+    required this.score,
+    required this.maxScore,
+    required this.justification,
+    required this.suggestions,
+  });
+}
+
 class RoomPage extends StatefulWidget {
   final String roomId;
 
@@ -24,8 +42,7 @@ class RoomPage extends StatefulWidget {
   State<RoomPage> createState() => _RoomPageState();
 }
 
-class _RoomPageState extends State<RoomPage>
-    with TickerProviderStateMixin {
+class _RoomPageState extends State<RoomPage> with TickerProviderStateMixin {
   late AnimationController _bgController;
   late PageController _pageController;
   int _currentTab = 0;
@@ -39,6 +56,12 @@ class _RoomPageState extends State<RoomPage>
   bool _isLoadingDetail = true;
   String? _loadError;
   String? _deadline;
+
+  List<_RequirementResult>? _checkResults;
+  double? _memberAiScore;
+  double? _memberOwnerScore;
+  double? _memberFinalScore;
+  String? _memberOwnerComment;
 
   @override
   void initState() {
@@ -62,11 +85,34 @@ class _RoomPageState extends State<RoomPage>
     }
     try {
       final memberInfo = await _roomService.getRoomMemberInfo(widget.roomId);
-      final rawDeadline = memberInfo['deadline'] as String?;
-      if (rawDeadline != null && mounted) {
-        setState(() { _deadline = _formatDeadline(rawDeadline); });
+      if (mounted) {
+        setState(() {
+          final rawDeadline = memberInfo['deadline'] as String?;
+          if (rawDeadline != null) _deadline = _formatDeadline(rawDeadline);
+          final rawAi = memberInfo['ai_score'];
+          if (rawAi != null) _memberAiScore = (rawAi as num).toDouble();
+          final rawOwner = memberInfo['owner_score'];
+          if (rawOwner != null) _memberOwnerScore = (rawOwner as num).toDouble();
+          final rawFinal = memberInfo['final_score'];
+          if (rawFinal != null) _memberFinalScore = (rawFinal as num).toDouble();
+          final rawComment = memberInfo['owner_comment'];
+          if (rawComment != null) _memberOwnerComment = rawComment as String;
+        });
       }
     } catch (_) {}
+
+    final prefs = await SharedPreferences.getInstance();
+    final cachedText = prefs.getString('check_results_text_${widget.roomId}');
+    if (cachedText != null && mounted) {
+      final parsed = _parseSubmitResponse(cachedText);
+      if (parsed.isNotEmpty) {
+        final cachedScore = parsed.fold(0.0, (s, r) => s + r.score) / parsed.length * 10;
+        setState(() {
+          _checkResults = parsed;
+          _memberAiScore ??= cachedScore;
+        });
+      }
+    }
   }
 
   String _formatDeadline(String iso) {
@@ -81,6 +127,47 @@ class _RoomPageState extends State<RoomPage>
     } catch (_) {
       return iso;
     }
+  }
+
+  /// Парсит markdown-текст ответа /submit в список результатов по критериям.
+  List<_RequirementResult> _parseSubmitResponse(String text) {
+    final results = <_RequirementResult>[];
+    final headerRe = RegExp(r'## Requirement \d+ \(([^)]+)\)');
+    final matches = headerRe.allMatches(text).toList();
+
+    for (int i = 0; i < matches.length; i++) {
+      final title = matches[i].group(1) ?? 'Требование ${i + 1}';
+      final start = matches[i].end;
+      final end = i + 1 < matches.length ? matches[i + 1].start : text.length;
+      final block = text.substring(start, end).trim();
+
+      // Извлекаем внешний JSON-объект с учётом вложенности
+      final jsonStart = block.indexOf('{');
+      if (jsonStart < 0) continue;
+      int depth = 0;
+      int jsonEnd = -1;
+      for (int j = jsonStart; j < block.length; j++) {
+        if (block[j] == '{') {
+          depth++;
+        } else if (block[j] == '}') {
+          depth--;
+          if (depth == 0) { jsonEnd = j; break; }
+        }
+      }
+      if (jsonEnd < 0) continue;
+
+      try {
+        final json = jsonDecode(block.substring(jsonStart, jsonEnd + 1)) as Map<String, dynamic>;
+        results.add(_RequirementResult(
+          title: title,
+          score: (json['score'] as num).toInt(),
+          maxScore: (json['max_score'] as num? ?? 10).toInt(),
+          justification: (json['justification'] as String?) ?? '',
+          suggestions: (json['suggestions'] as String?) ?? '',
+        ));
+      } catch (_) {}
+    }
+    return results;
   }
 
   @override
@@ -117,49 +204,53 @@ class _RoomPageState extends State<RoomPage>
     final url = _githubController.text.trim();
 
     if (url.isEmpty) {
-      setState(() {
-        _submissionError = 'Введите URL репозитория';
-        _submissionSuccess = null;
-      });
+      setState(() { _submissionError = 'Введите URL репозитория'; _submissionSuccess = null; });
       return;
     }
 
-    // Простая валидация URL
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      setState(() {
-        _submissionError = 'URL должен начинаться с http:// или https://';
-        _submissionSuccess = null;
-      });
+      setState(() { _submissionError = 'URL должен начинаться с http:// или https://'; _submissionSuccess = null; });
       return;
     }
 
-    setState(() {
-      _isSubmitting = true;
-      _submissionError = null;
-      _submissionSuccess = null;
-    });
+    setState(() { _isSubmitting = true; _submissionError = null; _submissionSuccess = null; });
 
     try {
-      final result = await _roomService.submitSolution(url);
+      final result = await _roomService.submitSolution(url, widget.roomId);
 
       if (!mounted) return;
 
       if (result['success'] == true) {
+        final rawText = result['data']?['text'] as String?;
+        final parsed = rawText != null ? _parseSubmitResponse(rawText) : <_RequirementResult>[];
+        final avgScore = parsed.isEmpty
+            ? null
+            : parsed.fold(0.0, (s, r) => s + r.score) / parsed.length * 10;
+
+        if (rawText != null && parsed.isNotEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('check_results_text_${widget.roomId}', rawText);
+        }
+
+        _githubController.removeListener(_clearSubmissionMessages);
+        _githubController.clear();
+        _githubController.addListener(_clearSubmissionMessages);
+
         setState(() {
           _submissionSuccess = result['message'] ?? 'Решение успешно отправлено';
           _submissionError = null;
-          _githubController.clear();
+          if (parsed.isNotEmpty) {
+            _checkResults = parsed;
+            _memberAiScore = avgScore;
+          }
         });
+
+        if (parsed.isNotEmpty) _onTabChanged(1);
       } else {
-        setState(() {
-          _submissionError = result['message'] ?? 'Ошибка отправки решения';
-          _submissionSuccess = null;
-        });
+        setState(() { _submissionError = result['message'] ?? 'Ошибка отправки решения'; _submissionSuccess = null; });
       }
     } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -169,24 +260,15 @@ class _RoomPageState extends State<RoomPage>
       backgroundColor: const Color(0xFF0A0E1A),
       body: Stack(
         children: [
-          // Animated background
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _bgController,
               builder: (context, child) {
-                return CustomPaint(
-                  painter: _BackgroundPainter(_bgController.value * 2 * pi),
-                );
+                return CustomPaint(painter: _BackgroundPainter(_bgController.value * 2 * pi));
               },
             ),
           ),
-
-          // Grid
-          Positioned.fill(
-            child: CustomPaint(painter: _GridPainter()),
-          ),
-
-          // Content
+          Positioned.fill(child: CustomPaint(painter: _GridPainter())),
           SafeArea(
             child: Column(
               children: [
@@ -195,10 +277,7 @@ class _RoomPageState extends State<RoomPage>
                   child: PageView(
                     controller: _pageController,
                     onPageChanged: _onPageChanged,
-                    children: [
-                      _buildTaskTab(),
-                      _buildResultTab(),
-                    ],
+                    children: [_buildTaskTab(), _buildResultTab()],
                   ),
                 ),
               ],
@@ -214,13 +293,10 @@ class _RoomPageState extends State<RoomPage>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF0A0E1A).withValues(alpha: 0.95),
-        border: const Border(
-          bottom: BorderSide(color: _borderColor, width: 1),
-        ),
+        border: const Border(bottom: BorderSide(color: _borderColor, width: 1)),
       ),
       child: Column(
         children: [
-          // Top row
           Row(
             children: [
               GestureDetector(
@@ -231,15 +307,9 @@ class _RoomPageState extends State<RoomPage>
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
-                    ),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                   ),
-                  child: const Icon(
-                    Icons.arrow_back,
-                    color: _textPrimary,
-                    size: 20,
-                  ),
+                  child: const Icon(Icons.arrow_back, color: _textPrimary, size: 20),
                 ),
               ),
               const SizedBox(width: 12),
@@ -249,11 +319,7 @@ class _RoomPageState extends State<RoomPage>
                   children: [
                     Text(
                       _roomDetail?.name ?? widget.roomId,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: _textPrimary,
-                      ),
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: _textPrimary),
                     ),
                     if (_deadline != null) ...[
                       const SizedBox(height: 2),
@@ -261,10 +327,8 @@ class _RoomPageState extends State<RoomPage>
                         children: [
                           const Icon(Icons.schedule, size: 14, color: _textSecondary),
                           const SizedBox(width: 4),
-                          Text(
-                            'Дедлайн: $_deadline',
-                            style: const TextStyle(fontSize: 13, color: _textSecondary),
-                          ),
+                          Text('Дедлайн: $_deadline',
+                              style: const TextStyle(fontSize: 13, color: _textSecondary)),
                         ],
                       ),
                     ],
@@ -274,17 +338,12 @@ class _RoomPageState extends State<RoomPage>
             ],
           ),
           const SizedBox(height: 16),
-
-          // Tabs
-          Container(
-            padding: const EdgeInsets.all(4),
-            child: Row(
-              children: [
-                Expanded(child: _tab(0, 'Задание')),
-                const SizedBox(width: 8),
-                Expanded(child: _tab(1, 'Результат')),
-              ],
-            ),
+          Row(
+            children: [
+              Expanded(child: _tab(0, 'Задание')),
+              const SizedBox(width: 8),
+              Expanded(child: _tab(1, 'Результат')),
+            ],
           ),
         ],
       ),
@@ -298,9 +357,7 @@ class _RoomPageState extends State<RoomPage>
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: isActive
-              ? _accentPrimary.withValues(alpha: 0.1)
-              : Colors.transparent,
+          color: isActive ? _accentPrimary.withValues(alpha: 0.1) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
@@ -319,12 +376,8 @@ class _RoomPageState extends State<RoomPage>
                 height: 2,
                 margin: const EdgeInsets.symmetric(horizontal: 30),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.transparent,
-                      _accentPrimary,
-                      Colors.transparent,
-                    ],
+                  gradient: const LinearGradient(
+                    colors: [Colors.transparent, _accentPrimary, Colors.transparent],
                   ),
                   borderRadius: BorderRadius.circular(1),
                 ),
@@ -342,20 +395,10 @@ class _RoomPageState extends State<RoomPage>
         Container(
           width: 4,
           height: 20,
-          decoration: BoxDecoration(
-            color: stripeColor,
-            borderRadius: BorderRadius.circular(2),
-          ),
+          decoration: BoxDecoration(color: stripeColor, borderRadius: BorderRadius.circular(2)),
         ),
         const SizedBox(width: 10),
-        Text(
-          text,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _textPrimary,
-          ),
-        ),
+        Text(text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _textPrimary)),
       ],
     );
   }
@@ -368,9 +411,7 @@ class _RoomPageState extends State<RoomPage>
           const Center(
             child: Padding(
               padding: EdgeInsets.all(40),
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary),
-              ),
+              child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary)),
             ),
           )
         else if (_loadError != null)
@@ -385,17 +426,11 @@ class _RoomPageState extends State<RoomPage>
               children: [
                 const Icon(Icons.error_outline, color: _error, size: 20),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _loadError!,
-                    style: const TextStyle(color: _textSecondary, fontSize: 14),
-                  ),
-                ),
+                Expanded(child: Text(_loadError!, style: const TextStyle(color: _textSecondary, fontSize: 14))),
               ],
             ),
           )
         else if (_roomDetail != null)
-          // Task Card
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
@@ -413,23 +448,13 @@ class _RoomPageState extends State<RoomPage>
                     if (_roomDetail!.language != null && _roomDetail!.language!.isNotEmpty)
                       Text(
                         _roomDetail!.language!,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 16,
-                          color: Color(0x809CA3AF),
-                        ),
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 16, color: Color(0x809CA3AF)),
                       ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  _roomDetail!.description,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    height: 1.6,
-                    color: _textSecondary,
-                  ),
-                ),
+                Text(_roomDetail!.description,
+                    style: const TextStyle(fontSize: 14, height: 1.6, color: _textSecondary)),
                 if (_roomDetail!.criteria.isNotEmpty) ...[
                   const SizedBox(height: 24),
                   _sectionTitle('Критерии', _accentPrimary),
@@ -454,124 +479,37 @@ class _RoomPageState extends State<RoomPage>
             children: [
               _sectionTitle('Отправить решение', _accentSecondary),
               const SizedBox(height: 16),
-              const Text(
-                'Ссылка на репозиторий',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Ссылка на репозиторий',
+                  style: TextStyle(fontSize: 13, color: _textSecondary, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextField(
                 controller: _githubController,
-                style: const TextStyle(
-                  color: _textPrimary,
-                  fontSize: 14,
-                  fontFamily: 'monospace',
-                ),
+                style: const TextStyle(color: _textPrimary, fontSize: 14, fontFamily: 'monospace'),
                 decoration: InputDecoration(
                   hintText: 'https://github.com/username/repository',
-                  hintStyle: TextStyle(
-                    color: _textSecondary.withValues(alpha: 0.4),
-                  ),
+                  hintStyle: TextStyle(color: _textSecondary.withValues(alpha: 0.4)),
                   filled: true,
                   fillColor: const Color(0x801F2937),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
+                      borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(
-                      color: Colors.transparent,
-                      width: 1.5,
-                    ),
-                  ),
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Colors.transparent, width: 1.5)),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(
-                      color: _accentPrimary,
-                      width: 1.5,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _accentPrimary, width: 1.5)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
               ),
               const SizedBox(height: 16),
-
-              // Error/Success messages
               if (_submissionError != null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _error.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: _error.withValues(alpha: 0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.error_outline,
-                        color: _error,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _submissionError!,
-                          style: const TextStyle(
-                            color: _error,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _statusBanner(_submissionError!, _error, Icons.error_outline),
                 const SizedBox(height: 16),
               ],
-
               if (_submissionSuccess != null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: _success.withValues(alpha: 0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.check_circle_outline,
-                        color: _success,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _submissionSuccess!,
-                          style: const TextStyle(
-                            color: _success,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _statusBanner(_submissionSuccess!, _success, Icons.check_circle_outline),
                 const SizedBox(height: 16),
               ],
-
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
@@ -580,13 +518,7 @@ class _RoomPageState extends State<RoomPage>
                     end: Alignment.bottomRight,
                     colors: [_accentPrimary, _accentSecondary],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _accentPrimary.withValues(alpha: 0.3),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
+                  boxShadow: [BoxShadow(color: _accentPrimary.withValues(alpha: 0.3), blurRadius: 24, offset: const Offset(0, 8))],
                 ),
                 child: Material(
                   color: Colors.transparent,
@@ -602,18 +534,9 @@ class _RoomPageState extends State<RoomPage>
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : const Text(
-                              'Отправить на проверку',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                                  strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
+                          : const Text('Отправить на проверку',
+                              style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ),
@@ -622,6 +545,24 @@ class _RoomPageState extends State<RoomPage>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _statusBanner(String message, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message, style: TextStyle(color: color, fontSize: 13))),
+        ],
+      ),
     );
   }
 
@@ -639,10 +580,8 @@ class _RoomPageState extends State<RoomPage>
           const Icon(Icons.check, size: 20, color: _accentPrimary),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              criterion.criterionText,
-              style: const TextStyle(fontSize: 14, height: 1.5, color: _textPrimary),
-            ),
+            child: Text(criterion.criterionText,
+                style: const TextStyle(fontSize: 14, height: 1.5, color: _textPrimary)),
           ),
           if (criterion.isAiVerified)
             Container(
@@ -655,21 +594,11 @@ class _RoomPageState extends State<RoomPage>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SvgPicture.asset(
-                    'assets/icons/ai_chip.svg',
-                    width: 12,
-                    height: 12,
-                    colorFilter: ColorFilter.mode(_accentSecondary, BlendMode.srcIn),
-                  ),
+                  SvgPicture.asset('assets/icons/ai_chip.svg', width: 12, height: 12,
+                      colorFilter: ColorFilter.mode(_accentSecondary, BlendMode.srcIn)),
                   const SizedBox(width: 4),
-                  Text(
-                    'AUTO',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: _accentSecondary,
-                    ),
-                  ),
+                  Text('AUTO',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _accentSecondary)),
                 ],
               ),
             ),
@@ -679,107 +608,120 @@ class _RoomPageState extends State<RoomPage>
   }
 
   Widget _buildResultTab() {
+    final hasAiResults = _checkResults != null && _checkResults!.isNotEmpty;
+    final hasReviewContent = _memberOwnerScore != null ||
+        (_memberOwnerComment != null && _memberOwnerComment!.isNotEmpty);
+
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
         // Score cards
         Row(
           children: [
-            Expanded(child: _scoreCard('Автопроверка', 85, 100, _success)),
+            Expanded(child: _scoreCard('Автопроверка', _memberAiScore, _success)),
             const SizedBox(width: 12),
-            Expanded(child: _scoreCard('Ревью', 78, 100, _warning)),
+            Expanded(child: _scoreCard('Ревью', _memberOwnerScore, _accentPrimary)),
           ],
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.center,
+          child: FractionallySizedBox(
+            widthFactor: 0.5,
+            child: _scoreCard('Итог', _memberFinalScore, _success),
+          ),
         ),
         const SizedBox(height: 24),
 
-        // Auto-check results
-        const Text(
-          'Автопроверка',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _textPrimary,
-          ),
-        ),
+        _sectionTitle('Автопроверка', _accentSecondary),
         const SizedBox(height: 16),
 
-        _resultItem(
-          title: 'Покрытие unit-тестами ≥ 80%',
-          description:
-              'Отличная работа! Покрытие составляет 87%, все критические функции протестированы. '
-              'Обнаружено 45 тестов, все проходят успешно.',
-          status: 'Выполнено: 87%',
-          type: ResultType.success,
-          badge: ResultBadge.auto,
-        ),
+        if (!hasAiResults)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            decoration: BoxDecoration(
+              color: _bgCard,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _borderColor),
+            ),
+            child: const Column(
+              children: [
+                Icon(Icons.inbox_outlined, color: _textSecondary, size: 40),
+                SizedBox(height: 12),
+                Text(
+                  'Результаты появятся после отправки решения на проверку',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _textSecondary, fontSize: 14),
+                ),
+              ],
+            ),
+          )
+        else
+          ..._checkResults!.map(_buildRequirementResult),
 
-        _resultItem(
-          title: 'Правильные HTTP статусы',
-          description:
-              'Все endpoints корректно возвращают статусы. Проверено: 200 OK, 201 Created, 401 Unauthorized, '
-              '422 Validation Error.',
-          status: 'Выполнено',
-          type: ResultType.success,
-          badge: ResultBadge.auto,
-        ),
-
-        _resultItem(
-          title: 'Обработка ошибок и edge cases',
-          description:
-              'Реализован middleware для обработки ошибок. Try-catch блоки присутствуют во всех асинхронных операциях. '
-              'Ошибки логируются корректно.',
-          status: 'Выполнено',
-          type: ResultType.success,
-          badge: ResultBadge.auto,
-        ),
-
-        _resultItem(
-          title: 'Code style и линтер',
-          description:
-              'ESLint проверка пройдена успешно, 0 ошибок. Код соответствует Airbnb style guide. '
-              'Форматирование единообразное, используется Prettier.',
-          status: 'Выполнено',
-          type: ResultType.success,
-          badge: ResultBadge.auto,
-        ),
-
-        const SizedBox(height: 32),
-
-        // Expert review
-        const Text(
-          'Ревью эксперта',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _textPrimary,
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        _resultItem(
-          title: 'Валидация входных данных',
-          description:
-              'Базовая валидация присутствует, но отсутствуют проверки для некоторых edge cases. '
-              'Рекомендуется добавить валидацию email формата и длины пароля.',
-          status: 'Частично: 65%',
-          type: ResultType.warning,
-          badge: ResultBadge.human,
-        ),
-
-        _resultItem(
-          title: 'Документация API',
-          description:
-              'README файл содержит только базовую информацию. Отсутствует описание endpoints, примеры запросов '
-              'и ответов. Необходимо добавить документацию для всех API методов.',
-          status: 'Не выполнено: 30%',
-          type: ResultType.failed,
-          badge: ResultBadge.human,
-        ),
+        if (hasReviewContent) ...[
+          const SizedBox(height: 24),
+          _sectionTitle('Ревью', _accentPrimary),
+          const SizedBox(height: 16),
+          _buildReviewResult(),
+        ],
       ],
     );
   }
 
-  Widget _scoreCard(String label, int value, int max, Color color) {
+  Widget _buildReviewResult() {
+    final score = _memberOwnerScore;
+    final comment = _memberOwnerComment;
+    final hasComment = comment != null && comment.isNotEmpty;
+
+    final ResultType type;
+    if (score == null) {
+      type = ResultType.warning;
+    } else if (score >= 70) {
+      type = ResultType.success;
+    } else if (score >= 40) {
+      type = ResultType.warning;
+    } else {
+      type = ResultType.failed;
+    }
+
+    return _resultItem(
+      title: '',
+      description: hasComment
+          ? comment
+          : (score != null ? 'Оценка выставлена без комментария' : ''),
+      status: score != null ? '${score.round()} / 100' : '—',
+      type: type,
+      badge: ResultBadge.human,
+    );
+  }
+
+  Widget _buildRequirementResult(_RequirementResult r) {
+    final ResultType type;
+    if (r.score >= 7) {
+      type = ResultType.success;
+    } else if (r.score >= 4) {
+      type = ResultType.warning;
+    } else {
+      type = ResultType.failed;
+    }
+
+    final description = r.suggestions.isNotEmpty
+        ? '${r.justification}\n\nРекомендации: ${r.suggestions}'
+        : r.justification;
+
+    return _resultItem(
+      title: r.title,
+      description: description,
+      status: '${r.score} / ${r.maxScore}',
+      type: type,
+      badge: ResultBadge.auto,
+    );
+  }
+
+  Widget _scoreCard(String label, double? value, Color color) {
+    final display = value != null ? value.round().toString() : '—';
+    final displayColor = value != null ? color : _textSecondary;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -789,33 +731,14 @@ class _RoomPageState extends State<RoomPage>
       ),
       child: Column(
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: _textSecondary,
-              textBaseline: TextBaseline.alphabetic,
-              letterSpacing: 1,
-            ),
-          ),
+          Text(label,
+              style: const TextStyle(fontSize: 12, color: _textSecondary, letterSpacing: 1)),
           const SizedBox(height: 8),
-          Text(
-            '$value',
-            style: TextStyle(
-              fontSize: 36,
-              fontWeight: FontWeight.w700,
-              color: color,
-              height: 1,
-            ),
-          ),
+          Text(display,
+              style: TextStyle(fontSize: 36, fontWeight: FontWeight.w700, color: displayColor, height: 1)),
           const SizedBox(height: 4),
-          Text(
-            'из $max',
-            style: const TextStyle(
-              fontSize: 14,
-              color: _textSecondary,
-            ),
-          ),
+          Text(value != null ? 'из 100' : '',
+              style: const TextStyle(fontSize: 14, color: _textSecondary)),
         ],
       ),
     );
@@ -828,30 +751,24 @@ class _RoomPageState extends State<RoomPage>
     required ResultType type,
     required ResultBadge badge,
   }) {
-    Color iconColor;
-    Color borderColor;
-    Color statusBgColor;
-    Color statusColor;
-    IconData icon;
+    final Color iconColor;
+    final Color borderColor;
+    final Color statusBgColor;
+    final Color statusColor;
+    final IconData icon;
 
     switch (type) {
       case ResultType.success:
-        iconColor = _success;
-        borderColor = _success;
-        statusBgColor = _success.withValues(alpha: 0.1);
-        statusColor = _success;
+        iconColor = _success; borderColor = _success;
+        statusBgColor = _success.withValues(alpha: 0.1); statusColor = _success;
         icon = Icons.check_circle;
       case ResultType.warning:
-        iconColor = _warning;
-        borderColor = _warning;
-        statusBgColor = _warning.withValues(alpha: 0.1);
-        statusColor = _warning;
+        iconColor = _warning; borderColor = _warning;
+        statusBgColor = _warning.withValues(alpha: 0.1); statusColor = _warning;
         icon = Icons.warning;
       case ResultType.failed:
-        iconColor = _error;
-        borderColor = _error;
-        statusBgColor = _error.withValues(alpha: 0.1);
-        statusColor = _error;
+        iconColor = _error; borderColor = _error;
+        statusBgColor = _error.withValues(alpha: 0.1); statusColor = _error;
         icon = Icons.cancel;
     }
 
@@ -866,133 +783,96 @@ class _RoomPageState extends State<RoomPage>
             border: Border.all(color: _borderColor),
           ),
           child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, size: 24, color: iconColor),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, size: 24, color: iconColor),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: _textPrimary,
+                        Row(
+                          children: [
+                            if (title.isNotEmpty)
+                              Expanded(
+                                child: Text(title,
+                                    style: const TextStyle(
+                                        fontSize: 15, fontWeight: FontWeight.w600, color: _textPrimary)),
+                              )
+                            else
+                              const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: badge == ResultBadge.auto
+                                    ? _accentSecondary.withValues(alpha: 0.15)
+                                    : _accentPrimary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: badge == ResultBadge.auto
+                                      ? _accentSecondary.withValues(alpha: 0.4)
+                                      : _accentPrimary.withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (badge == ResultBadge.auto)
+                                    SvgPicture.asset('assets/icons/ai_chip.svg', width: 11, height: 11,
+                                        colorFilter: ColorFilter.mode(_accentSecondary, BlendMode.srcIn))
+                                  else
+                                    const Icon(Icons.person_outline, size: 11, color: _accentPrimary),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    badge == ResultBadge.auto ? 'AUTO' : 'РЕВЬЮ',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: badge == ResultBadge.auto ? _accentSecondary : _accentPrimary),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
+                          ],
                         ),
+                        const SizedBox(height: 6),
+                        Text(description,
+                            style: const TextStyle(fontSize: 13, height: 1.5, color: _textSecondary)),
+                        const SizedBox(height: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
-                            color: badge == ResultBadge.auto
-                                ? _accentSecondary.withValues(alpha: 0.15)
-                                : _accentPrimary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: badge == ResultBadge.auto
-                                  ? _accentSecondary.withValues(alpha: 0.4)
-                                  : _accentPrimary.withValues(alpha: 0.4),
-                            ),
-                          ),
+                              color: statusBgColor, borderRadius: BorderRadius.circular(12)),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (badge == ResultBadge.auto)
-                                SvgPicture.asset(
-                                  'assets/icons/ai_chip.svg',
-                                  width: 11,
-                                  height: 11,
-                                  colorFilter: ColorFilter.mode(_accentSecondary, BlendMode.srcIn),
-                                )
-                              else
-                                const Icon(
-                                  Icons.person_outline,
-                                  size: 11,
-                                  color: _accentPrimary,
-                                ),
-                              const SizedBox(width: 4),
-                              Text(
-                                badge == ResultBadge.auto ? 'AUTO' : 'РЕВЬЮ',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: badge == ResultBadge.auto
-                                      ? _accentSecondary
-                                      : _accentPrimary,
-                                ),
-                              ),
+                              Icon(icon, size: 12, color: statusColor),
+                              const SizedBox(width: 6),
+                              Text(status,
+                                  style: TextStyle(
+                                      fontSize: 11, fontWeight: FontWeight.w600, color: statusColor)),
                             ],
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        height: 1.5,
-                        color: _textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusBgColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(icon, size: 12, color: statusColor),
-                          const SizedBox(width: 6),
-                          Text(
-                            status,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: statusColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-          ),
         ),
-        // Colored left border
         Positioned(
-          left: 0,
-          top: 0,
-          bottom: 16,
+          left: 0, top: 0, bottom: 16,
           child: Container(
             width: 4,
             decoration: BoxDecoration(
               color: borderColor,
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                bottomLeft: Radius.circular(12),
-              ),
+                  topLeft: Radius.circular(12), bottomLeft: Radius.circular(12)),
             ),
           ),
         ),
@@ -1002,10 +882,8 @@ class _RoomPageState extends State<RoomPage>
 }
 
 enum ResultType { success, warning, failed }
-
 enum ResultBadge { auto, human }
 
-// Background painters
 class _BackgroundPainter extends CustomPainter {
   final double rotation;
   _BackgroundPainter(this.rotation);
@@ -1018,34 +896,14 @@ class _BackgroundPainter extends CustomPainter {
     canvas.translate(-size.width, -size.height);
 
     final purpleCenter = Offset(size.width * 0.4, size.height);
-    canvas.drawCircle(
-      purpleCenter,
-      size.width * 0.8,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [
-            const Color(0xFF7C3AED).withValues(alpha: 0.15),
-            Colors.transparent,
-          ],
-          stops: const [0.0, 1.0],
-        ).createShader(
-            Rect.fromCircle(center: purpleCenter, radius: size.width * 0.8)),
-    );
+    canvas.drawCircle(purpleCenter, size.width * 0.8,
+        Paint()..shader = RadialGradient(colors: [const Color(0xFF7C3AED).withValues(alpha: 0.15), Colors.transparent], stops: const [0.0, 1.0])
+            .createShader(Rect.fromCircle(center: purpleCenter, radius: size.width * 0.8)));
 
     final cyanCenter = Offset(size.width * 1.6, size.height * 1.6);
-    canvas.drawCircle(
-      cyanCenter,
-      size.width * 0.8,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [
-            const Color(0xFF00D4FF).withValues(alpha: 0.15),
-            Colors.transparent,
-          ],
-          stops: const [0.0, 1.0],
-        ).createShader(
-            Rect.fromCircle(center: cyanCenter, radius: size.width * 0.8)),
-    );
+    canvas.drawCircle(cyanCenter, size.width * 0.8,
+        Paint()..shader = RadialGradient(colors: [const Color(0xFF00D4FF).withValues(alpha: 0.15), Colors.transparent], stops: const [0.0, 1.0])
+            .createShader(Rect.fromCircle(center: cyanCenter, radius: size.width * 0.8)));
 
     canvas.restore();
   }
@@ -1057,10 +915,7 @@ class _BackgroundPainter extends CustomPainter {
 class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = _accentPrimary.withValues(alpha: 0.03)
-      ..strokeWidth = 1;
-
+    final paint = Paint()..color = _accentPrimary.withValues(alpha: 0.03)..strokeWidth = 1;
     const gridSize = 50.0;
     for (double x = 0; x < size.width; x += gridSize) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);

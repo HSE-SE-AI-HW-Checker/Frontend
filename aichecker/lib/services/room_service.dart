@@ -140,10 +140,11 @@ class RoomService {
   }
 
   /// Отправить решение задачи
-  Future<Map<String, dynamic>> submitSolution(String githubUrl) async {
+  Future<Map<String, dynamic>> submitSolution(String githubUrl, String roomId) async {
     try {
       final response = await _dio.post('/submit', data: {
         'data': githubUrl,
+        'room_id': roomId,
         'data_type': 0,
       });
 
@@ -156,6 +157,30 @@ class RoomService {
       };
     } on DioException catch (e) {
       return _handleError(e, 'Ошибка отправки решения');
+    }
+  }
+
+  /// Получить участников комнаты с данными пользователей
+  Future<List<Map<String, dynamic>>> getRoomMembers(String roomId) async {
+    try {
+      final response = await _dio.get('/rooms/$roomId/members');
+      final List<dynamic> data = response.data as List<dynamic>;
+      return data.map((e) => e as Map<String, dynamic>).toList();
+    } on DioException catch (e) {
+      final error = _handleError(e, 'Ошибка загрузки участников');
+      throw Exception(error['message']);
+    }
+  }
+
+  /// Выставить оценку участнику от владельца комнаты (score: 0–100)
+  Future<void> setOwnerScore(String roomId, int userId, double score, {String? comment}) async {
+    try {
+      final body = <String, dynamic>{'owner_score': score};
+      if (comment != null && comment.isNotEmpty) body['owner_comment'] = comment;
+      await _dio.patch('/rooms/$roomId/members/$userId/score', data: body);
+    } on DioException catch (e) {
+      final error = _handleError(e, 'Ошибка выставления оценки');
+      throw Exception(error['message']);
     }
   }
 

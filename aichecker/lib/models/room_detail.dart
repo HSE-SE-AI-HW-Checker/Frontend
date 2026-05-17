@@ -21,6 +21,7 @@ class RoomDetail {
   final String? createdAt;
   final int participantCount;
   final String? creatorName;
+  final String? password;
 
   RoomDetail({
     required this.id,
@@ -31,6 +32,7 @@ class RoomDetail {
     this.createdAt,
     required this.participantCount,
     this.creatorName,
+    this.password,
   });
 
   factory RoomDetail.fromJson(Map<String, dynamic> json) {
@@ -46,6 +48,7 @@ class RoomDetail {
       createdAt: json['created_at'] as String?,
       participantCount: (json['participant_count'] ?? 0) as int,
       creatorName: json['creator_name'] as String?,
+      password: json['password'] as String?,
     );
   }
 }

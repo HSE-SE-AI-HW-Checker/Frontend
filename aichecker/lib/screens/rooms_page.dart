@@ -18,7 +18,9 @@ const _bgCard = Color(0x99111827);
 const _success = Color(0xFF10B981);
 
 class RoomsPage extends StatefulWidget {
-  const RoomsPage({super.key});
+  final VoidCallback? onRecentRoomsRefreshNeeded;
+
+  const RoomsPage({super.key, this.onRecentRoomsRefreshNeeded});
 
   @override
   State<RoomsPage> createState() => _RoomsPageState();
@@ -63,11 +65,12 @@ class _RoomsPageState extends State<RoomsPage>
     try {
       await _roomService.joinRoom(roomId, password);
       if (!mounted) return;
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => RoomPage(roomId: roomId),
         ),
       );
+      widget.onRecentRoomsRefreshNeeded?.call();
     } catch (_) {
       if (mounted) {
         setState(() => _joinError = 'Неправильный логин комнаты или пароль');
@@ -720,11 +723,14 @@ class _RoomsPageState extends State<RoomsPage>
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ManageRoomPage(roomId: room.id),
-                  ),
-                ),
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ManageRoomPage(roomId: room.id),
+                    ),
+                  );
+                  widget.onRecentRoomsRefreshNeeded?.call();
+                },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   decoration: BoxDecoration(

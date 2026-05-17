@@ -821,7 +821,7 @@ class _CreateRoomPageState extends State<CreateRoomPage>
                   _summaryRow(
                     Icons.checklist_outlined,
                     'Критерии',
-                    '${_criteria.length} шт. · $aiCount с автопроверкой ИИ',
+                    '${_criteria.length} · $aiCount с автопроверкой ИИ',
                   ),
                 ],
               ),
