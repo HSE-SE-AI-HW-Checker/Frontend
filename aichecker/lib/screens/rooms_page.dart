@@ -71,6 +71,7 @@ class _RoomsPageState extends State<RoomsPage>
         ),
       );
       widget.onRecentRoomsRefreshNeeded?.call();
+      _loadMyRooms();
     } catch (_) {
       if (mounted) {
         setState(() => _joinError = 'Неправильный логин комнаты или пароль');

@@ -183,7 +183,12 @@ class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
           // Main content
           Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                20 + MediaQuery.of(context).padding.bottom,
+              ),
               child: FadeTransition(
                 opacity: CurvedAnimation(
                   parent: _entryController,

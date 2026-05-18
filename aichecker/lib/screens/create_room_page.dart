@@ -741,7 +741,7 @@ class _CreateRoomPageState extends State<CreateRoomPage>
           24,
           24,
           24,
-          24 + MediaQuery.of(ctx).viewInsets.bottom,
+          24 + MediaQuery.of(ctx).viewInsets.bottom + MediaQuery.of(ctx).padding.bottom,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
