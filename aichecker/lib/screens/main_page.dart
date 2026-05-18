@@ -121,7 +121,7 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
                     Expanded(child: _buildContent()),
                   ],
                 ),
-                const RoomsPage(),
+                RoomsPage(onRecentRoomsRefreshNeeded: _loadRecentRooms),
                 const ProfilePage(),
               ],
             ),
@@ -288,7 +288,7 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
                 curve: Curves.easeOut,
               ),
             )),
-            child: _RoomCard(room: _recentRooms[index]),
+            child: _RoomCard(room: _recentRooms[index], onReturn: _loadRecentRooms),
           ),
         );
       },
@@ -392,7 +392,8 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
 
 class _RoomCard extends StatefulWidget {
   final Room room;
-  const _RoomCard({required this.room});
+  final VoidCallback? onReturn;
+  const _RoomCard({required this.room, this.onReturn});
 
   @override
   State<_RoomCard> createState() => _RoomCardState();
@@ -418,7 +419,7 @@ class _RoomCardState extends State<_RoomCard> {
               MaterialPageRoute(
                 builder: (_) => RoomPage(roomId: room.id),
               ),
-            );
+            ).then((_) => widget.onReturn?.call());
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),

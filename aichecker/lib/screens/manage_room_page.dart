@@ -37,9 +37,14 @@ class _ManageRoomPageState extends State<ManageRoomPage>
   bool _isLoadingDetail = true;
   String? _loadError;
 
+  // Participants
+  List<Map<String, dynamic>>? _members;
+  bool _isLoadingMembers = true;
+  String? _membersError;
+
   // Settings form state
   final _nameController = TextEditingController();
-  final _passwordController = TextEditingController(text: 'mock-password-42');
+  final _passwordController = TextEditingController();
   bool _passwordVisible = false;
   _RoomStatus _selectedStatus = _RoomStatus.active;
   double _aiWeight = 40;
@@ -57,6 +62,7 @@ class _ManageRoomPageState extends State<ManageRoomPage>
     )..repeat();
     _pageController = PageController();
     _loadRoomDetail();
+    _loadParticipants();
   }
 
   Future<void> _loadRoomDetail() async {
@@ -66,6 +72,7 @@ class _ManageRoomPageState extends State<ManageRoomPage>
         setState(() {
           _roomDetail = detail;
           _nameController.text = detail.name;
+          _passwordController.text = detail.password ?? '';
           _isLoadingDetail = false;
         });
       }
@@ -74,6 +81,25 @@ class _ManageRoomPageState extends State<ManageRoomPage>
         setState(() {
           _loadError = e.toString();
           _isLoadingDetail = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadParticipants() async {
+    try {
+      final members = await _roomService.getRoomMembers(widget.roomId);
+      if (mounted) {
+        setState(() {
+          _members = members;
+          _isLoadingMembers = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _membersError = e.toString();
+          _isLoadingMembers = false;
         });
       }
     }
@@ -807,57 +833,80 @@ class _ManageRoomPageState extends State<ManageRoomPage>
   // ── Participants Tab ──────────────────────────────────────────────────────
 
   Widget _buildParticipantsTab() {
-    final participants = [
-      _ParticipantData(
-        name: 'Иван Петров',
-        email: 'ivan.petrov@example.com',
-        isGraded: false,
-        autoScore: 85,
-        githubUrl: 'github.com/ivanpetrov/api-auth',
-        criteria: [
-          _CriterionData('Покрытие unit-тестами ≥ 80%',
-              initialScore: 8,
-              aiFeedback:
-                  'Покрытие составляет 87%, что выше требуемого порога. Обнаружено 45 тестов, все успешно проходят. Протестированы критические пути.'),
-          _CriterionData('HTTP статусы корректны',
-              initialScore: 10,
-              aiFeedback:
-                  'Все endpoints корректно возвращают статусы: 200 OK, 201 Created, 401 Unauthorized, 422 Validation Error. Проверено 12 endpoints.'),
-          _CriterionData('Валидация данных'),
-          _CriterionData('Документация API'),
-        ],
-        reviewScore: null,
-        finalScore: null,
-      ),
-      _ParticipantData(
-        name: 'Мария Сидорова',
-        email: 'maria.sidorova@example.com',
-        isGraded: true,
-        autoScore: 92,
-        githubUrl: 'github.com/mariasid/jwt-auth-api',
-        criteria: [
-          _CriterionData('Покрытие unit-тестами ≥ 80%',
-              initialScore: 10,
-              aiFeedback:
-                  'Отличное покрытие 95%. Найдено 67 тестов, все критические пути покрыты. Используются моки для внешних зависимостей.'),
-          _CriterionData('HTTP статусы корректны',
-              initialScore: 10,
-              aiFeedback:
-                  'Все endpoints корректно возвращают статусы. Дополнительно обнаружены корректные 404 и 500 ответы.'),
-          _CriterionData('Валидация данных', initialScore: 9),
-          _CriterionData('Документация API', initialScore: 8),
-        ],
-        reviewScore: 9.3,
-        finalScore: 9.6,
-        initialComment:
-            'Отличная работа! Все критерии выполнены на высоком уровне. Документация могла бы быть чуть подробнее.',
-      ),
-    ];
+    if (_isLoadingMembers) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary),
+        ),
+      );
+    }
+
+    if (_membersError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _error.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _error.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, color: _error, size: 28),
+                const SizedBox(height: 12),
+                Text(
+                  _membersError!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: _textSecondary, fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                GestureDetector(
+                  onTap: () {
+                    setState(() { _isLoadingMembers = true; _membersError = null; });
+                    _loadParticipants();
+                  },
+                  child: const Text('Повторить', style: TextStyle(color: _accentPrimary, fontSize: 14)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final members = _members ?? [];
+
+    if (members.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.group_outlined, color: _textSecondary.withValues(alpha: 0.5), size: 48),
+            const SizedBox(height: 12),
+            const Text(
+              'Участников пока нет',
+              style: TextStyle(color: _textSecondary, fontSize: 15),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final criteria = _roomDetail?.criteria ?? [];
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-      itemCount: participants.length,
-      itemBuilder: (_, i) => _ParticipantCard(data: participants[i]),
+      itemCount: members.length,
+      itemBuilder: (_, i) => _ParticipantCard(
+        member: members[i],
+        criteria: criteria,
+        roomId: widget.roomId,
+        roomService: _roomService,
+        onScoreSubmitted: _loadParticipants,
+      ),
     );
   }
 
@@ -875,43 +924,22 @@ class _ManageRoomPageState extends State<ManageRoomPage>
   }
 }
 
-class _CriterionData {
-  final String name;
-  final int maxScore;
-  final String? aiFeedback;
-  final int? initialScore;
-  const _CriterionData(this.name,
-      {this.maxScore = 10, this.aiFeedback, this.initialScore});
-}
-
-class _ParticipantData {
-  final String name;
-  final String email;
-  final bool isGraded;
-  final int autoScore;
-  final String githubUrl;
-  final List<_CriterionData> criteria;
-  final double? reviewScore;
-  final double? finalScore;
-  final String initialComment;
-  const _ParticipantData({
-    required this.name,
-    required this.email,
-    required this.isGraded,
-    required this.autoScore,
-    required this.githubUrl,
-    required this.criteria,
-    this.reviewScore,
-    this.finalScore,
-    this.initialComment = '',
-  });
-}
-
 // ── Participant Card ──────────────────────────────────────────────────────
 
 class _ParticipantCard extends StatefulWidget {
-  final _ParticipantData data;
-  const _ParticipantCard({required this.data});
+  final Map<String, dynamic> member;
+  final List<RoomCriterion> criteria;
+  final String roomId;
+  final RoomService roomService;
+  final VoidCallback onScoreSubmitted;
+
+  const _ParticipantCard({
+    required this.member,
+    required this.criteria,
+    required this.roomId,
+    required this.roomService,
+    required this.onScoreSubmitted,
+  });
 
   @override
   State<_ParticipantCard> createState() => _ParticipantCardState();
@@ -919,23 +947,25 @@ class _ParticipantCard extends StatefulWidget {
 
 class _ParticipantCardState extends State<_ParticipantCard> {
   late final List<TextEditingController> _scoreControllers;
-  late final List<TextEditingController> _commentControllers;
   late final TextEditingController _generalCommentController;
+  bool _isSubmitting = false;
+  String? _submitError;
   bool _submitted = false;
 
   @override
   void initState() {
     super.initState();
-    final data = widget.data;
-    _scoreControllers = data.criteria.map((c) {
-      return TextEditingController(
-          text: c.initialScore != null ? '${c.initialScore}' : '');
-    }).toList();
-    _commentControllers =
-        data.criteria.map((_) => TextEditingController()).toList();
-    _generalCommentController =
-        TextEditingController(text: data.initialComment);
-    _submitted = data.isGraded;
+    final ownerScore = _ownerScore;
+    // Распределяем существующий owner_score равномерно по критериям (0-10 шкала)
+    final perCriterionInit = (ownerScore != null && widget.criteria.isNotEmpty)
+        ? (ownerScore / 10).toStringAsFixed(1)
+        : '';
+    _scoreControllers = List.generate(
+      widget.criteria.length,
+      (_) => TextEditingController(text: perCriterionInit),
+    );
+    _generalCommentController = TextEditingController(text: _ownerComment ?? '');
+    _submitted = ownerScore != null;
   }
 
   @override
@@ -943,12 +973,19 @@ class _ParticipantCardState extends State<_ParticipantCard> {
     for (final c in _scoreControllers) {
       c.dispose();
     }
-    for (final c in _commentControllers) {
-      c.dispose();
-    }
     _generalCommentController.dispose();
     super.dispose();
   }
+
+  int get _userId => (widget.member['user_id'] as num).toInt();
+  String get _username => widget.member['username'] as String? ?? 'Участник #$_userId';
+  String get _email => widget.member['email'] as String? ?? '';
+  double? get _aiScore => (widget.member['ai_score'] as num?)?.toDouble();
+  double? get _ownerScore => (widget.member['owner_score'] as num?)?.toDouble();
+  double? get _finalScore => (widget.member['final_score'] as num?)?.toDouble();
+  int get _submissionsCount => (widget.member['submissions_count'] as num?)?.toInt() ?? 0;
+  String? get _submissionUrl => widget.member['submission_url'] as String?;
+  String? get _ownerComment => widget.member['owner_comment'] as String?;
 
   double? _calcReviewScore() {
     final vals = _scoreControllers
@@ -959,9 +996,35 @@ class _ParticipantCardState extends State<_ParticipantCard> {
     return vals.reduce((a, b) => a + b) / vals.length;
   }
 
+  Future<void> _submit() async {
+    final reviewScore = _calcReviewScore();
+    if (reviewScore == null) {
+      setState(() => _submitError = 'Выставьте баллы по всем критериям');
+      return;
+    }
+
+    setState(() { _isSubmitting = true; _submitError = null; });
+    try {
+      final comment = _generalCommentController.text.trim();
+      await widget.roomService.setOwnerScore(
+        widget.roomId,
+        _userId,
+        reviewScore * 10,
+        comment: comment.isEmpty ? null : comment,
+      );
+      if (mounted) {
+        setState(() { _isSubmitting = false; _submitted = true; });
+        widget.onScoreSubmitted();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() { _isSubmitting = false; _submitError = e.toString().replaceFirst('Exception: ', ''); });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final data = widget.data;
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(24),
@@ -973,23 +1036,51 @@ class _ParticipantCardState extends State<_ParticipantCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(data),
+          _buildHeader(),
           const SizedBox(height: 16),
-          _buildGithubLink(data.githubUrl),
-          const SizedBox(height: 20),
-          _buildCriteriaScoring(data),
-          const SizedBox(height: 4),
-          _buildScoresSummary(data),
-          const SizedBox(height: 16),
-          _buildGeneralComment(data.isGraded),
-          const SizedBox(height: 16),
-          _buildSubmitButton(),
+          if (_submissionUrl != null) ...[
+            _buildGithubLink(_submissionUrl!),
+            const SizedBox(height: 20),
+          ] else if (_submissionsCount == 0) ...[
+            _buildNoSubmission(),
+            const SizedBox(height: 20),
+          ],
+          if (widget.criteria.isNotEmpty && _submissionsCount > 0) ...[
+            _buildCriteriaScoring(),
+            const SizedBox(height: 4),
+            _buildScoresSummary(),
+            const SizedBox(height: 16),
+            _buildGeneralComment(),
+            const SizedBox(height: 16),
+            if (_submitError != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: _error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _error.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: _error, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_submitError!, style: const TextStyle(color: _error, fontSize: 13))),
+                  ],
+                ),
+              ),
+            ],
+            _buildSubmitButton(),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildHeader(_ParticipantData data) {
+  Widget _buildHeader() {
+    final isGraded = _ownerScore != null;
+    final autoScore = _aiScore;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -998,7 +1089,7 @@ class _ParticipantCardState extends State<_ParticipantCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                data.name,
+                _username,
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -1007,67 +1098,83 @@ class _ParticipantCardState extends State<_ParticipantCard> {
               ),
               const SizedBox(height: 4),
               Text(
-                data.email,
+                _email,
                 style: const TextStyle(fontSize: 13, color: _textSecondary),
               ),
               const SizedBox(height: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: data.isGraded
-                      ? _success.withValues(alpha: 0.15)
-                      : _warning.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: data.isGraded
-                        ? _success.withValues(alpha: 0.3)
-                        : _warning.withValues(alpha: 0.3),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isGraded
+                          ? _success.withValues(alpha: 0.15)
+                          : _warning.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: isGraded
+                            ? _success.withValues(alpha: 0.3)
+                            : _warning.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Text(
+                      isGraded ? 'ОЦЕНЕНА' : 'НА ПРОВЕРКЕ',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                        color: isGraded ? _success : _warning,
+                      ),
+                    ),
                   ),
-                ),
-                child: Text(
-                  data.isGraded ? 'ОЦЕНЕНА' : 'НА ПРОВЕРКЕ',
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Отправки: $_submissionsCount',
+                      style: const TextStyle(fontSize: 11, color: _textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        if (autoScore != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: _accentSecondary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _accentSecondary.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              children: [
+                const Text(
+                  'AUTO',
                   style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 10,
+                    color: _textSecondary,
                     letterSpacing: 0.5,
-                    color: data.isGraded ? _success : _warning,
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: _accentSecondary.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: _accentSecondary.withValues(alpha: 0.3)),
-          ),
-          child: Column(
-            children: [
-              const Text(
-                'AUTO',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: _textSecondary,
-                  letterSpacing: 0.5,
+                const SizedBox(height: 4),
+                Text(
+                  autoScore.round().toString(),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: _accentSecondary,
+                    height: 1,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${data.autoScore}',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: _accentSecondary,
-                  height: 1,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
@@ -1087,19 +1194,38 @@ class _ParticipantCardState extends State<_ParticipantCard> {
           Expanded(
             child: Text(
               url,
-              style: const TextStyle(
-                fontSize: 13,
-                color: _accentPrimary,
-              ),
+              style: const TextStyle(fontSize: 13, color: _accentPrimary),
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+          _CopyButton(value: url),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoSubmission() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.02),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.inbox_outlined, size: 18, color: _textSecondary),
+          SizedBox(width: 8),
+          Text(
+            'Решение ещё не отправлено',
+            style: TextStyle(fontSize: 13, color: _textSecondary),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCriteriaScoring(_ParticipantData data) {
+  Widget _buildCriteriaScoring() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1112,8 +1238,8 @@ class _ParticipantCardState extends State<_ParticipantCard> {
           ),
         ),
         const SizedBox(height: 12),
-        ...List.generate(data.criteria.length, (i) {
-          final criterion = data.criteria[i];
+        ...List.generate(widget.criteria.length, (i) {
+          final criterion = widget.criteria[i];
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(16),
@@ -1121,139 +1247,58 @@ class _ParticipantCardState extends State<_ParticipantCard> {
               color: Colors.white.withValues(alpha: 0.02),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        criterion.name,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: _textPrimary,
-                        ),
-                      ),
+                Expanded(
+                  child: Text(
+                    criterion.criterionText,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: _textPrimary,
                     ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 60,
-                      child: TextField(
-                        controller: _scoreControllers[i],
-                        readOnly: data.isGraded,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: _textPrimary,
-                        ),
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: const Color(0x801F2937),
-                          hintText: '—',
-                          hintStyle: TextStyle(
-                              color: _textSecondary.withValues(alpha: 0.4)),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(
-                                color: _accentPrimary, width: 1.5),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 8),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '/ ${criterion.maxScore}',
-                      style: const TextStyle(
-                          fontSize: 13, color: _textSecondary),
-                    ),
-                  ],
+                  ),
                 ),
-                if (criterion.aiFeedback != null) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _accentSecondary.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: _accentSecondary.withValues(alpha: 0.2)),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 60,
+                  child: TextField(
+                    controller: _scoreControllers[i],
+                    readOnly: _submitted,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: _textPrimary,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            SvgPicture.asset(
-                              'assets/icons/ai_chip.svg',
-                              width: 12,
-                              height: 12,
-                              colorFilter: ColorFilter.mode(
-                                  _accentSecondary, BlendMode.srcIn),
-                            ),
-                            const SizedBox(width: 6),
-                            const Text(
-                              'AUTO ОТЗЫВ',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.5,
-                                color: _accentSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          criterion.aiFeedback!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            height: 1.5,
-                            color: _textSecondary,
-                          ),
-                        ),
-                      ],
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: _submitted
+                          ? const Color(0x261F2937)
+                          : const Color(0x801F2937),
+                      hintText: '—',
+                      hintStyle: TextStyle(
+                          color: _textSecondary.withValues(alpha: 0.4)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                            color: _accentPrimary, width: 1.5),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 8),
                     ),
+                    onChanged: (_) => setState(() {}),
                   ),
-                ],
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _commentControllers[i],
-                  readOnly: data.isGraded,
-                  maxLines: 2,
-                  minLines: 1,
-                  style: const TextStyle(fontSize: 13, color: _textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Ваш комментарий по этому критерию...',
-                    hintStyle: TextStyle(
-                      fontSize: 12,
-                      color: _textSecondary.withValues(alpha: 0.4),
-                    ),
-                    filled: true,
-                    fillColor: data.isGraded
-                        ? const Color(0x261F2937)
-                        : const Color(0x801F2937),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide:
-                          const BorderSide(color: _accentPrimary, width: 1.5),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '/ 10',
+                  style: TextStyle(fontSize: 13, color: _textSecondary),
                 ),
               ],
             ),
@@ -1263,13 +1308,12 @@ class _ParticipantCardState extends State<_ParticipantCard> {
     );
   }
 
-  Widget _buildScoresSummary(_ParticipantData data) {
-    final reviewScore =
-        data.isGraded ? data.reviewScore : _calcReviewScore();
-    final autoVal = data.autoScore / 10.0;
-    final finalScore = (data.isGraded && data.finalScore != null)
-        ? data.finalScore
-        : (reviewScore != null
+  Widget _buildScoresSummary() {
+    final reviewScore = _submitted ? (_ownerScore != null ? _ownerScore! / 10 : null) : _calcReviewScore();
+    final autoVal = _aiScore != null ? _aiScore! / 10 : null;
+    final finalScore = _finalScore != null
+        ? _finalScore! / 10
+        : (autoVal != null && reviewScore != null
             ? autoVal * 0.4 + reviewScore * 0.6
             : null);
 
@@ -1283,29 +1327,28 @@ class _ParticipantCardState extends State<_ParticipantCard> {
       ),
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: _scoreRow(
-              icon: SvgPicture.asset('assets/icons/ai_chip.svg',
-                  width: 12,
-                  height: 12,
-                  colorFilter:
-                      ColorFilter.mode(_accentSecondary, BlendMode.srcIn)),
-              label: 'ИИ балл',
-              detail:
-                  '${data.criteria.where((c) => c.aiFeedback != null).length} из ${data.criteria.length} критериев',
-              value: autoVal.toStringAsFixed(1),
-              valueColor: _accentSecondary,
+          if (autoVal != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: _scoreRow(
+                icon: SvgPicture.asset('assets/icons/ai_chip.svg',
+                    width: 12,
+                    height: 12,
+                    colorFilter:
+                        ColorFilter.mode(_accentSecondary, BlendMode.srcIn)),
+                label: 'ИИ балл',
+                detail: 'Автопроверка',
+                value: autoVal.toStringAsFixed(1),
+                valueColor: _accentSecondary,
+              ),
             ),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            padding: EdgeInsets.fromLTRB(16, autoVal != null ? 0 : 16, 16, 0),
             child: _scoreRow(
               icon: const Icon(Icons.person_outline,
                   size: 12, color: _accentPrimary),
               label: 'РЕВЬЮ балл',
-              detail:
-                  '${data.criteria.length} из ${data.criteria.length} критериев',
+              detail: '${widget.criteria.length} критериев',
               value: reviewScore != null
                   ? reviewScore.toStringAsFixed(1)
                   : '—',
@@ -1353,7 +1396,7 @@ class _ParticipantCardState extends State<_ParticipantCard> {
                 ),
                 Text(
                   finalScore != null
-                      ? finalScore!.toStringAsFixed(1)
+                      ? finalScore.toStringAsFixed(1)
                       : '—',
                   style: const TextStyle(
                     fontSize: 32,
@@ -1424,7 +1467,7 @@ class _ParticipantCardState extends State<_ParticipantCard> {
     );
   }
 
-  Widget _buildGeneralComment(bool readOnly) {
+  Widget _buildGeneralComment() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1439,7 +1482,7 @@ class _ParticipantCardState extends State<_ParticipantCard> {
         const SizedBox(height: 8),
         TextField(
           controller: _generalCommentController,
-          readOnly: readOnly,
+          readOnly: _submitted,
           maxLines: 3,
           minLines: 3,
           style: const TextStyle(fontSize: 14, color: _textPrimary),
@@ -1448,7 +1491,7 @@ class _ParticipantCardState extends State<_ParticipantCard> {
             hintStyle:
                 TextStyle(color: _textSecondary.withValues(alpha: 0.4)),
             filled: true,
-            fillColor: readOnly
+            fillColor: _submitted
                 ? const Color(0x261F2937)
                 : const Color(0x801F2937),
             border: OutlineInputBorder(
@@ -1492,23 +1535,30 @@ class _ParticipantCardState extends State<_ParticipantCard> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: _submitted
-              ? null
-              : () => setState(() => _submitted = true),
+          onTap: (_submitted || _isSubmitting) ? null : _submit,
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 14),
             alignment: Alignment.center,
-            child: Text(
-              _submitted ? 'Баллы выставлены' : 'Выставить баллы',
-              style: TextStyle(
-                color: _submitted
-                    ? Colors.white.withValues(alpha: 0.5)
-                    : Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : Text(
+                    _submitted ? 'Баллы выставлены' : 'Выставить баллы',
+                    style: TextStyle(
+                      color: _submitted
+                          ? Colors.white.withValues(alpha: 0.5)
+                          : Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
           ),
         ),
       ),

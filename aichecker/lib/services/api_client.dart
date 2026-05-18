@@ -1,8 +1,9 @@
 import 'package:dio/dio.dart';
 import 'token_storage.dart';
+import '../config/app_config.dart';
 
 class ApiClient {
-  static const String baseUrl = 'http://localhost:8080';
+  static const String baseUrl = AppConfig.baseUrl;
   late final Dio _dio;
 
   // Singleton pattern
@@ -12,8 +13,8 @@ class ApiClient {
   ApiClient._internal() {
     _dio = Dio(BaseOptions(
       baseUrl: baseUrl,
-      connectTimeout: const Duration(seconds: 5),
-      receiveTimeout: const Duration(seconds: 3),
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 120),
       headers: {'Content-Type': 'application/json'},
     ));
 
